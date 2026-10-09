@@ -6,6 +6,9 @@ CREATE TABLE IF NOT EXISTS accounts (
  id text PRIMARY KEY REFERENCES guests(id), username text UNIQUE NOT NULL,
  password_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS admin_note text NOT NULL DEFAULT '';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_login_at timestamptz;
 CREATE TABLE IF NOT EXISTS customer_sessions (
  token_hash text PRIMARY KEY, account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
  expires_at timestamptz NOT NULL

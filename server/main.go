@@ -189,7 +189,7 @@ func (a *app) customer(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		var id string
-		e := a.db.QueryRow(r.Context(), "SELECT account_id FROM customer_sessions WHERE token_hash=$1 AND expires_at>now()", hash(t)).Scan(&id)
+		e := a.db.QueryRow(r.Context(), "SELECT s.account_id FROM customer_sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=$1 AND s.expires_at>now() AND NOT a.disabled", hash(t)).Scan(&id)
 		if errors.Is(e, pgx.ErrNoRows) {
 			fail(w, 401, "请登录后继续")
 			return
@@ -239,6 +239,11 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/admin/logout", a.admin(a.logout))
 	m.HandleFunc("GET /api/admin/orders", a.admin(a.adminOrders))
 	m.HandleFunc("GET /api/admin/summary", a.admin(a.summary))
+	m.HandleFunc("GET /api/admin/overview", a.admin(a.overview))
+	m.HandleFunc("GET /api/admin/customers", a.admin(a.customers))
+	m.HandleFunc("GET /api/admin/customers/{id}", a.admin(a.customerDetail))
+	m.HandleFunc("PATCH /api/admin/customers/{id}", a.admin(a.updateCustomer))
+	m.HandleFunc("GET /api/admin/order-list", a.admin(a.adminOrderList))
 	m.HandleFunc("PATCH /api/admin/orders/{id}", a.admin(a.updateOrder))
 	m.HandleFunc("POST /api/admin/dishes", a.admin(a.saveDish))
 	m.HandleFunc("PUT /api/admin/dishes/{id}", a.admin(a.saveDish))

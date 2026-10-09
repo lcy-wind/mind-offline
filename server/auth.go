@@ -87,7 +87,7 @@ func (a *app) registerCustomer(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
-	_, e = tx.Exec(ctx, "INSERT INTO accounts(id,username,password_hash) VALUES($1,$2,$3)", id, in.Username, string(pw))
+	_, e = tx.Exec(ctx, "INSERT INTO accounts(id,username,password_hash,last_login_at) VALUES($1,$2,$3,now())", id, in.Username, string(pw))
 	if e != nil {
 		var pe *pgconn.PgError
 		if errors.As(e, &pe) && pe.Code == "23505" {
@@ -138,13 +138,44 @@ func (a *app) loginCustomer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "用户名或密码不正确")
 		return
 	}
-	t := token()
-	_, e = a.db.Exec(r.Context(), "INSERT INTO customer_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '30 days')", hash(t), id)
+	ctx := r.Context()
+	tx, e := a.db.Begin(ctx)
 	if e != nil {
 		a.internal(w, e)
 		return
 	}
-	_, _ = a.db.Exec(r.Context(), "DELETE FROM customer_sessions WHERE account_id=$1 AND expires_at<now()", id)
+	defer tx.Rollback(ctx)
+	var disabled bool
+	e = tx.QueryRow(ctx, "SELECT disabled FROM accounts WHERE id=$1 FOR UPDATE", id).Scan(&disabled)
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	if disabled {
+		fail(w, 403, "账号已停用，请联系店长")
+		return
+	}
+	t := token()
+	_, e = tx.Exec(ctx, "INSERT INTO customer_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '30 days')", hash(t), id)
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	_, e = tx.Exec(ctx, "UPDATE accounts SET last_login_at=now() WHERE id=$1", id)
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	_, e = tx.Exec(ctx, "DELETE FROM customer_sessions WHERE account_id=$1 AND expires_at<now()", id)
+	if e != nil {
+		a.internal(w, e)
+		return
+	}
+	if e = tx.Commit(ctx); e != nil {
+		a.internal(w, e)
+		return
+	}
+
 	jsonOut(w, 200, map[string]string{"token": t, "username": in.Username, "id": id})
 }
 func (a *app) logoutCustomer(w http.ResponseWriter, r *http.Request) {
