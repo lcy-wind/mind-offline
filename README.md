@@ -42,7 +42,7 @@ cd server
 go mod download
 ```
 
-参考 `server/.env.example` 设置 `DATABASE_URL`、`ADMIN_PASSWORD`（至少 16 位），再运行：
+参考 `server/.env.example` 设置 `DATABASE_URL`、`ADMIN_PASSWORD`（至少 6 位），再运行：
 
 ```sh
 cd server

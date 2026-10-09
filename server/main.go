@@ -588,8 +588,8 @@ func main() {
 	}
 	dsn := os.Getenv("DATABASE_URL")
 	pw := os.Getenv("ADMIN_PASSWORD")
-	if dsn == "" || len(pw) < 16 {
-		log.Fatal("DATABASE_URL and ADMIN_PASSWORD (16+ characters) are required")
+	if dsn == "" || len(pw) < 6 {
+		log.Fatal("DATABASE_URL and ADMIN_PASSWORD (6+ characters) are required")
 	}
 	cfg, e := pgxpool.ParseConfig(dsn)
 	if e != nil {
