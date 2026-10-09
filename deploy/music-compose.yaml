@@ -1,0 +1,26 @@
+services:
+  music:
+    image: ${MUSIC_BRIDGE_IMAGE:?Set MUSIC_BRIDGE_IMAGE}
+    container_name: mind-offline-music
+    restart: unless-stopped
+    network_mode: host
+    env_file: music.env
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:18085/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 3m
+        max-file: "2"

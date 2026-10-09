@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
+import MusicPanel from "../../components/MusicPanel.vue";
+const musicForeground = ref(true);
 import {
   request,
   currentToken,
@@ -203,12 +205,16 @@ async function refresh() {
   }
 }
 onShow(() => {
+  musicForeground.value = true;
   refresh();
   timer = setInterval(() => {
     if (!busy.value) refresh();
   }, 8000);
 });
-onHide(() => clearInterval(timer));
+onHide(() => {
+  musicForeground.value = false;
+  clearInterval(timer);
+});
 onUnload(() => clearInterval(timer));
 function choose(d: Dish) {
   if (!ensureSession()) return;
@@ -530,10 +536,17 @@ async function saveReceipt() {
         >
         <view
           class="nav-item"
+          :class="{ active: tab === 'music' }"
+          @click="tab = 'music'"
+          ><text>♫</text><text>音乐实验室</text
+          ><text class="nav-index">03</text></view
+        >
+        <view
+          class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">03</text></view
+          ><text class="nav-index">04</text></view
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -699,6 +712,13 @@ async function saveReceipt() {
             ></view
           ></template
         >
+        <MusicPanel
+          v-if="tab === 'music'"
+          :key="me.id"
+          :account-id="me.id"
+          :foreground="musicForeground"
+          @auth-expired="forgetSession"
+        />
         <template v-if="tab === 'about'"
           ><view class="page-heading"
             ><text class="eyebrow">EMPLOYEE SURVIVAL GUIDE</text
@@ -2272,6 +2292,19 @@ async function saveReceipt() {
   }
   .dish-name {
     font-size: 12px;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 760px) {
+  .sidebar .nav-item {
+    padding: 10px 3px;
+    gap: 3px;
+    font-size: 10px;
+  }
+  .sidebar .nav-item > text:first-child {
+    font-size: 14px;
   }
 }
 </style>

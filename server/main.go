@@ -36,6 +36,7 @@ var assets embed.FS
 
 type app struct {
 	db            *pgxpool.Pool
+	music         *musicClient
 	adminPassword string
 	limits        limiter
 }
@@ -230,6 +231,12 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/auth/register", a.limited("register:", 5, a.registerCustomer))
 	m.HandleFunc("POST /api/auth/login", a.limited("customer-login:", 10, a.loginCustomer))
 	m.HandleFunc("POST /api/auth/logout", a.customer(a.logoutCustomer))
+	m.HandleFunc("GET /api/music/netease", a.customer(a.musicStatus))
+	m.HandleFunc("POST /api/music/netease/qr", a.customer(a.limited("music-start-ip:", 10, a.musicStart)))
+	m.HandleFunc("POST /api/music/netease/qr/check", a.customer(a.musicCheck))
+	m.HandleFunc("POST /api/music/netease/qr/cancel", a.customer(a.musicCancel))
+	m.HandleFunc("POST /api/music/netease/unbind", a.customer(a.musicUnbind))
+	m.HandleFunc("GET /api/music/netease/playlists", a.customer(a.musicPlaylists))
 	m.HandleFunc("GET /api/menu", a.menu)
 	m.HandleFunc("GET /api/me", a.customer(a.me))
 	m.HandleFunc("POST /api/claim", a.customer(a.claim))
@@ -610,7 +617,11 @@ func main() {
 	if _, e = db.Exec(ctx, schema); e != nil {
 		log.Fatalf("schema migration failed: %v", e)
 	}
-	a := &app{db: db, adminPassword: pw}
+	music, e := configureMusic()
+	if e != nil {
+		log.Fatal("invalid music service configuration")
+	}
+	a := &app{db: db, adminPassword: pw, music: music}
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:18082"

@@ -14,6 +14,16 @@ CREATE TABLE IF NOT EXISTS customer_sessions (
  expires_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS customer_sessions_account ON customer_sessions(account_id);
+CREATE TABLE IF NOT EXISTS music_bindings (
+ account_id text PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ music_uid text UNIQUE NOT NULL, nickname text NOT NULL, avatar text NOT NULL DEFAULT '',
+ cookie_cipher bytea, bound_at timestamptz NOT NULL DEFAULT now(), expired boolean NOT NULL DEFAULT false
+);
+CREATE TABLE IF NOT EXISTS music_link_attempts (
+ id text PRIMARY KEY, account_id text UNIQUE NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ session_hash text NOT NULL REFERENCES customer_sessions(token_hash) ON DELETE CASCADE,
+ secret bytea NOT NULL, expires_at timestamptz NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dishes (
  id serial PRIMARY KEY, name text NOT NULL, description text NOT NULL, category text NOT NULL,
  emoji text NOT NULL, price integer NOT NULL CHECK(price BETWEEN 1 AND 200), available boolean NOT NULL DEFAULT true

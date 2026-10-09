@@ -135,3 +135,43 @@ BASE_URL=https://mind-offline.duckdns.org ADMIN_PASSWORD='<店长口令>' python
 `scripts/admin-smoke.py` 使用 `BASE_URL` 与 `ADMIN_PASSWORD`，验证顾客列表/详情、搜索、21笔订单分页、统计、私有备注、越权拦截、停用撤销多端会话、恢复后旧凭证仍失效以及凭证字段不泄露。生成的临时数据清理 SQL 位于 `.deploy/admin-smoke-cleanup.sql`，仅针对测试账号与菜品。
 
 统计口径：近7天以北京时间自然日计算；订单数含取消单，精神值流水/累计消费/热门菜品不含取消单；待处理队列包含所有日期未完成的订单。历史访客订单标记为“尚未绑定账号”，绑定后才关联注册顾客档案。
+
+## 网易云音乐实验接入
+
+顾客端的“音乐实验室”支持：扫码绑定、显示网易云昵称/头像、分页读取创建/收藏的歌单、跳转网易云以及解除绑定。当前不提供食堂内播放、会员内容获取或任何解锁功能。微信端仅完成构建，未进行真机验证；请先使用网页体验。
+
+这是基于第三方库的扫码登录方案，不是已经取得的网易云官方 OAuth 授权。首次扫码前页面要求用户明确同意本站保存登录凭证。真实扫码确认必须由用户在网易云 App 中完成；二维码可生成不代表一定能通过平台风控或读取全部歌单。
+
+### 结构与凭证隔离
+
+- `music-bridge/` 是独立的 Node.js 只读适配器，锁定 `@neteasecloudmusicapienhanced/api@4.41.1`，只导入二维码、账号信息和用户歌单模块，不启动其通用 API 服务。
+- 适配器只监听服务器 `127.0.0.1:18085`，内部请求另需随机服务凭证。公网只能通过 Go 的顾客身份校验接口访问。
+- Go 将网易云 Cookie 使用 AES-256-GCM 加密后存入 PostgreSQL。密文绑定食堂账号与用途；加密密钥存在服务器环境文件中，不存数据库或 Git。
+- 二维码尝试绑定食堂账号和当前登录会话，有效期最多3分钟。退出、停用、取消和解绑都会使对应尝试失效；解绑与确认采用事务避免延迟响应重新绑定。
+- 一个网易云账号同时只能关联一个食堂账号。歌单 UID 由绑定凭证推导，不接受顾客指定别人的 UID。
+- 所有音乐 API 响应均禁止缓存。前端及店长后台不接收 Cookie、服务凭证或加密密钥。上游 SDK 原始日志被抑制，防止失败响应把 Cookie 打入日志。
+- 解除绑定删除本站的凭证与未完成的二维码，不修改网易云歌单，也不替代网易云 App 的设备管理功能。
+- 失效音乐凭证会删除密文并提示重新扫码，不注销食堂账号。接口风控或故障只影响音乐模块。
+
+### 部署适配器
+
+```sh
+npm --prefix music-bridge ci --ignore-scripts
+npm --prefix music-bridge test
+python3 scripts/deploy-music.py
+python3 scripts/build.py
+python3 scripts/deploy.py
+```
+
+部署前准备 `/opt/mind-offline/music/music.env`（权限600），包含 `NCM_BRIDGE_TOKEN`。主应用环境中配置相同服务凭证、`NCM_BRIDGE_URL` 和独立 `MUSIC_ENCRYPTION_KEY`，参考 `server/.env.example`。本机对应配置保存在忽略目录 `.secrets/`。备份数据库时需要另行安全备份加密密钥，否则无法解密已有绑定。
+
+适配器容器采用192 MiB内存限制、0.5 CPU、只读根文件系统和临时 `/tmp`；不开放公网端口。主应用仍使用原有 Go 容器、数据库和域名。
+
+### 测试边界
+
+- Go 单元测试检查随机 nonce、跨账号/跨用途解密失败、密文篡改、头像域名和上游错误分类。
+- `TestMusicIntegration` 使用一次性 PostgreSQL 数据库和模拟音乐服务，覆盖二维码会话归属、重复绑定、取消/退出、解绑并发、凭证过期和接口不泄露 Cookie。通过 `MUSIC_TEST_DATABASE_URL` 显式指定一次性测试库；普通 `go test` 会跳过此项。
+- 适配器测试验证内部鉴权和路由白名单，不调用真实音乐账号。
+- 真实上游已验证二维码生成和等待扫码状态；个人账号确认和真实歌单读取需要用户亲自扫码后验证。
+
+第三方项目与版本来源：[NeteaseCloudMusicApiEnhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)。升级该依赖后需要重新验证扫码行为和会话隔离。
