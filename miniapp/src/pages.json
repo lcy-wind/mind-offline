@@ -1,0 +1,16 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "精神离职",
+        "disableScroll": false
+      }
+    }
+  ],
+  "globalStyle": {
+    "backgroundColor": "#f4f1e8",
+    "navigationBarTextStyle": "black"
+  }
+}

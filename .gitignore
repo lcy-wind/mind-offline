@@ -1,0 +1,17 @@
+node_modules/
+**/dist/
+.env
+.env.*
+!.env.example
+.secrets/
+.deploy/
+server/web/*
+!server/web/.gitkeep
+server/mind-offline
+*.log
+.DS_Store
+miniapp/src/manifest.local.json
+miniapp/dist/
+
+__pycache__/
+*.pyc

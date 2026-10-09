@@ -1,0 +1,23 @@
+{
+  "name": "精神离职",
+  "appid": "",
+  "description": "人可以不清醒，饭不能不吃。虚拟点餐实验。",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "vueVersion": "3",
+  "h5": {
+    "title": "精神离职 · 打工人情绪补给站",
+    "router": {
+      "mode": "hash"
+    }
+  },
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": true,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true
+  }
+}

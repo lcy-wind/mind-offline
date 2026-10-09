@@ -1,0 +1,24 @@
+services:
+  app:
+    image: ${MIND_OFFLINE_IMAGE:?Set MIND_OFFLINE_IMAGE to the release image}
+    container_name: mind-offline
+    restart: unless-stopped
+    network_mode: host
+    env_file: production.env
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    cpus: 0.75
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, /mind-offline, healthcheck]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
