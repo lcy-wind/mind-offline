@@ -181,17 +181,17 @@ func (a *app) limited(prefix string, n int, next http.HandlerFunc) http.HandlerF
 		next(w, r)
 	}
 }
-func (a *app) guest(next http.HandlerFunc) http.HandlerFunc {
+func (a *app) customer(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		t := bearer(r)
 		if len(t) != 64 {
-			fail(w, 401, "请重新进入食堂")
+			fail(w, 401, "请登录后继续")
 			return
 		}
 		var id string
-		e := a.db.QueryRow(r.Context(), "SELECT id FROM guests WHERE token_hash=$1", hash(t)).Scan(&id)
+		e := a.db.QueryRow(r.Context(), "SELECT account_id FROM customer_sessions WHERE token_hash=$1 AND expires_at>now()", hash(t)).Scan(&id)
 		if errors.Is(e, pgx.ErrNoRows) {
-			fail(w, 401, "请重新进入食堂")
+			fail(w, 401, "请登录后继续")
 			return
 		}
 		if e != nil {
@@ -227,12 +227,14 @@ func (a *app) routes() http.Handler {
 		}
 		jsonOut(w, 200, map[string]string{"status": "ok"})
 	})
-	m.HandleFunc("POST /api/guest", a.limited("guest:", 10, a.newGuest))
+	m.HandleFunc("POST /api/auth/register", a.limited("register:", 5, a.registerCustomer))
+	m.HandleFunc("POST /api/auth/login", a.limited("customer-login:", 10, a.loginCustomer))
+	m.HandleFunc("POST /api/auth/logout", a.customer(a.logoutCustomer))
 	m.HandleFunc("GET /api/menu", a.menu)
-	m.HandleFunc("GET /api/me", a.guest(a.me))
-	m.HandleFunc("POST /api/claim", a.guest(a.claim))
-	m.HandleFunc("GET /api/orders", a.guest(a.orders))
-	m.HandleFunc("POST /api/orders", a.guest(a.limited("order:", 30, a.createOrder)))
+	m.HandleFunc("GET /api/me", a.customer(a.me))
+	m.HandleFunc("POST /api/claim", a.customer(a.claim))
+	m.HandleFunc("GET /api/orders", a.customer(a.orders))
+	m.HandleFunc("POST /api/orders", a.customer(a.limited("order:", 30, a.createOrder)))
 	m.HandleFunc("POST /api/admin/login", a.limited("login:", 5, a.login))
 	m.HandleFunc("POST /api/admin/logout", a.admin(a.logout))
 	m.HandleFunc("GET /api/admin/orders", a.admin(a.adminOrders))
@@ -255,24 +257,16 @@ func (a *app) routes() http.Handler {
 		m.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
-func (a *app) newGuest(w http.ResponseWriter, r *http.Request) {
-	t := token()
-	_, e := a.db.Exec(r.Context(), "INSERT INTO guests(id,token_hash) VALUES($1,$2)", token(), hash(t))
-	if e != nil {
-		a.internal(w, e)
-		return
-	}
-	jsonOut(w, 201, map[string]string{"token": t})
-}
 func (a *app) me(w http.ResponseWriter, r *http.Request) {
 	var balance int
 	var claimed bool
-	e := a.db.QueryRow(r.Context(), "SELECT balance,COALESCE(last_claim=(now() AT TIME ZONE 'Asia/Shanghai')::date,false) FROM guests WHERE id=$1", r.Context().Value(guestKey)).Scan(&balance, &claimed)
+	var id, username string
+	e := a.db.QueryRow(r.Context(), "SELECT g.id,a.username,g.balance,COALESCE(g.last_claim=(now() AT TIME ZONE 'Asia/Shanghai')::date,false) FROM guests g JOIN accounts a ON a.id=g.id WHERE g.id=$1", r.Context().Value(guestKey)).Scan(&id, &username, &balance, &claimed)
 	if e != nil {
 		a.internal(w, e)
 		return
 	}
-	jsonOut(w, 200, map[string]any{"balance": balance, "claimed_today": claimed})
+	jsonOut(w, 200, map[string]any{"id": id, "username": username, "balance": balance, "claimed_today": claimed})
 }
 func (a *app) claim(w http.ResponseWriter, r *http.Request) {
 	_, e := a.db.Exec(r.Context(), "UPDATE guests SET balance=balance+100,last_claim=(now() AT TIME ZONE 'Asia/Shanghai')::date WHERE id=$1 AND (last_claim IS NULL OR last_claim<(now() AT TIME ZONE 'Asia/Shanghai')::date)", r.Context().Value(guestKey))

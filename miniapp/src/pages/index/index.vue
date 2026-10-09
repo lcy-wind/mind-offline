@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import {
   request,
-  connect,
+  currentToken,
+  SESSION_KEY,
+  ApiError,
   type Dish,
   type Guest,
   type Line,
@@ -12,7 +14,7 @@ import {
 const tab = ref("menu"),
   category = ref("全部补给"),
   menu = ref<Dish[]>([]),
-  me = ref<Guest>({ balance: 0, claimed_today: false }),
+  me = ref<Guest>({ id: "", username: "", balance: 0, claimed_today: false }),
   orders = ref<Order[]>([]);
 const loading = ref(true),
   error = ref(""),
@@ -25,8 +27,121 @@ const loading = ref(true),
   receipt = ref<Order | null>(null);
 const moods = ["勉强清醒", "灵魂离线", "已读乱回"];
 const categories = ["全部补给", "续命主食", "精神饮品", "摸鱼小食", "离职套餐"];
-const cart = ref<Line[]>(uni.getStorageSync("mind-offline-cart") || []);
-watch(cart, (v) => uni.setStorageSync("mind-offline-cart", v), { deep: true });
+const cart = ref<Line[]>([]);
+watch(
+  cart,
+  (v) => {
+    if (me.value.id) uni.setStorageSync("mind-offline-cart:" + me.value.id, v);
+  },
+  { deep: true, flush: "sync" },
+);
+const authMode = ref<"login" | "register">("login"),
+  username = ref(""),
+  password = ref(""),
+  confirmPassword = ref(""),
+  authError = ref(""),
+  bindLegacy = ref(false);
+const hasLegacy = ref(Boolean(uni.getStorageSync("mind-offline-token")));
+let displayedToken = currentToken();
+function clearPrivateState() {
+  me.value = { id: "", username: "", balance: 0, claimed_today: false };
+  cart.value = [];
+  orders.value = [];
+  receipt.value = null;
+  selected.value = null;
+  cartOpen.value = false;
+  note.value = "";
+  tab.value = "menu";
+}
+function ensureSession() {
+  if (!currentToken() || currentToken() !== displayedToken || !me.value.id) {
+    clearPrivateState();
+    displayedToken = currentToken();
+    refresh();
+    return false;
+  }
+  return true;
+}
+// #ifdef H5
+function syncTabs(event: StorageEvent) {
+  if (event.key === SESSION_KEY || event.key === null) {
+    clearPrivateState();
+    displayedToken = currentToken();
+    refresh();
+  }
+}
+onMounted(() => window.addEventListener("storage", syncTabs));
+onUnmounted(() => window.removeEventListener("storage", syncTabs));
+// #endif
+function forgetSession() {
+  uni.removeStorageSync(SESSION_KEY);
+  displayedToken = "";
+  clearPrivateState();
+}
+function handleFailure(e: unknown) {
+  if (e instanceof ApiError && e.status === 401) {
+    forgetSession();
+    authError.value = "登录已过期，请重新登录";
+  } else if (!(e instanceof ApiError && e.status === 0))
+    error.value = (e as Error).message;
+}
+async function authenticate() {
+  if (busy.value) return;
+  authError.value = "";
+  if (
+    authMode.value === "register" &&
+    password.value !== confirmPassword.value
+  ) {
+    authError.value = "两次输入的密码不一致";
+    return;
+  }
+  busy.value = true;
+  try {
+    const data: Record<string, unknown> = {
+      username: username.value,
+      password: password.value,
+    };
+    if (authMode.value === "register" && bindLegacy.value)
+      data.legacy_token = uni.getStorageSync("mind-offline-token");
+    const session = await request<{ token: string }>(
+      "/auth/" + authMode.value,
+      "POST",
+      data,
+    );
+    clearPrivateState();
+    uni.setStorageSync(SESSION_KEY, session.token);
+    displayedToken = session.token;
+    if (data.legacy_token) {
+      uni.removeStorageSync("mind-offline-token");
+      hasLegacy.value = false;
+      bindLegacy.value = false;
+    }
+    password.value = "";
+    confirmPassword.value = "";
+    error.value = "";
+    await refresh();
+  } catch (e) {
+    authError.value = (e as Error).message;
+  } finally {
+    busy.value = false;
+  }
+}
+async function signOut() {
+  if (!ensureSession()) return;
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    await request("/auth/logout", "POST");
+    forgetSession();
+    authError.value = "";
+    error.value = "";
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) forgetSession();
+    else toast((e as Error).message);
+  } finally {
+    busy.value = false;
+  }
+}
 const filtered = computed(() =>
   menu.value.filter(
     (d) => category.value === "全部补给" || d.category === category.value,
@@ -56,21 +171,32 @@ function toast(t: string) {
 }
 async function refresh() {
   if (fetching) return;
+  if (displayedToken !== currentToken()) {
+    clearPrivateState();
+    displayedToken = currentToken();
+  }
+  if (!currentToken()) {
+    loading.value = false;
+    return;
+  }
   fetching = true;
+  const expected = currentToken();
   try {
     const [g, ds, os] = await Promise.all([
-      connect(),
+      request<Guest>("/me"),
       request<Dish[]>("/menu"),
-      uni.getStorageSync("mind-offline-token")
-        ? request<Order[]>("/orders")
-        : Promise.resolve(null),
+      request<Order[]>("/orders"),
     ]);
+    if (expected !== currentToken()) return;
+    const changed = me.value.id !== g.id;
     me.value = g;
     menu.value = ds;
-    orders.value = os || (await request<Order[]>("/orders"));
+    orders.value = os;
+    if (changed)
+      cart.value = uni.getStorageSync("mind-offline-cart:" + g.id) || [];
     error.value = "";
   } catch (e) {
-    error.value = (e as Error).message;
+    handleFailure(e);
   } finally {
     loading.value = false;
     fetching = false;
@@ -85,11 +211,13 @@ onShow(() => {
 onHide(() => clearInterval(timer));
 onUnload(() => clearInterval(timer));
 function choose(d: Dish) {
+  if (!ensureSession()) return;
   if (!d.available) return;
   selected.value = d;
   quantity.value = 1;
 }
 function add() {
+  if (!ensureSession()) return;
   if (!selected.value) return;
   const d = selected.value;
   const old = cart.value.find(
@@ -116,23 +244,27 @@ function add() {
   toast("已加入精神补给袋");
 }
 function change(i: number, n: number) {
+  if (!ensureSession()) return;
   if (n > 0 && (cart.value[i].quantity >= 10 || count.value >= 30)) return;
   cart.value[i].quantity += n;
   if (cart.value[i].quantity <= 0) cart.value.splice(i, 1);
 }
 async function claim() {
+  if (!ensureSession()) return;
   if (busy.value) return;
   busy.value = true;
   try {
     me.value = await request<Guest>("/claim", "POST");
     toast("今日100精神值已到账");
   } catch (e) {
+    handleFailure(e);
     toast((e as Error).message);
   } finally {
     busy.value = false;
   }
 }
 async function checkout() {
+  if (!ensureSession()) return;
   if (busy.value || !cart.value.length) return;
   busy.value = true;
   try {
@@ -146,7 +278,7 @@ async function checkout() {
       })),
     };
     const signature = JSON.stringify(data);
-    let pending = uni.getStorageSync("mind-offline-pending");
+    let pending = uni.getStorageSync("mind-offline-pending:" + me.value.id);
     if (!pending || pending.signature !== signature) {
       pending = {
         signature,
@@ -157,7 +289,7 @@ async function checkout() {
           "-" +
           Math.random().toString(36).slice(2),
       };
-      uni.setStorageSync("mind-offline-pending", pending);
+      uni.setStorageSync("mind-offline-pending:" + me.value.id, pending);
     }
     const o = await request<Order>("/orders", "POST", {
       ...data,
@@ -168,9 +300,10 @@ async function checkout() {
     cartOpen.value = false;
     tab.value = "orders";
     receipt.value = o;
-    uni.removeStorageSync("mind-offline-pending");
+    uni.removeStorageSync("mind-offline-pending:" + me.value.id);
     await refresh();
   } catch (e) {
+    handleFailure(e);
     toast((e as Error).message);
   } finally {
     busy.value = false;
@@ -184,6 +317,7 @@ function date(s: string) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 async function saveReceipt() {
+  if (!ensureSession()) return;
   const o = receipt.value;
   if (!o) return;
   const ctx = uni.createCanvasContext("receiptCanvas");
@@ -257,7 +391,108 @@ async function saveReceipt() {
 </script>
 
 <template>
-  <view class="app-shell">
+  <view v-if="!me.id" class="auth-page">
+    <view class="auth-story"
+      ><text class="auth-wordmark">精神离职 / MIND OFFLINE</text
+      ><view class="auth-title"
+        >把工作放下，<br /><text>把快乐存进账号。</text></view
+      ><text class="auth-star">✳</text
+      ><text class="auth-subtitle"
+        >你的精神值、你的订单、你的摸鱼时刻。</text
+      ></view
+    >
+    <view class="auth-card"
+      ><text class="eyebrow">YOUR PERSONAL OFFLINE SPACE</text
+      ><view class="section-title">{{
+        authMode === "login" ? "欢迎回来，打工人。" : "领取你的离职工牌。"
+      }}</view>
+      <view class="auth-tabs"
+        ><button
+          :class="{ picked: authMode === 'login' }"
+          :disabled="busy"
+          @click="
+            authMode = 'login';
+            authError = '';
+          "
+        >
+          登录</button
+        ><button
+          :class="{ picked: authMode === 'register' }"
+          :disabled="busy"
+          @click="
+            authMode = 'register';
+            authError = '';
+          "
+        >
+          注册新账号
+        </button></view
+      >
+      <view class="field-label">用户名</view
+      ><input
+        v-model="username"
+        class="auth-input"
+        maxlength="24"
+        placeholder="3—24位字母、数字或下划线"
+        :disabled="busy"
+      />
+      <view class="field-label">密码</view
+      ><input
+        v-model="password"
+        class="auth-input"
+        password
+        maxlength="72"
+        placeholder="至少8个字符"
+        :disabled="busy"
+        @confirm="authenticate"
+      />
+      <template v-if="authMode === 'register'"
+        ><view class="field-label">确认密码</view
+        ><input
+          v-model="confirmPassword"
+          class="auth-input"
+          password
+          maxlength="72"
+          placeholder="再输入一次密码"
+          :disabled="busy"
+          @confirm="authenticate"
+        />
+        <view
+          v-if="hasLegacy"
+          class="legacy-option"
+          @click="!busy && (bindLegacy = !bindLegacy)"
+          ><text
+            >{{
+              bindLegacy ? "☑" : "☐"
+            }}
+            将本浏览器的旧订单和余额绑定到新账号</text
+          ><text class="muted"
+            >仅在确认这些记录属于你时勾选；绑定后不能再次转移。</text
+          ></view
+        ></template
+      >
+      <text v-if="authError || error" class="auth-error">{{
+        authError || error
+      }}</text>
+      <button
+        class="primary wide"
+        :disabled="busy || !username || !password"
+        @click="authenticate"
+      >
+        {{
+          busy
+            ? "正在办理手续…"
+            : authMode === "login"
+              ? "登录，开始精神离职 →"
+              : "注册并进入食堂 →"
+        }}
+      </button>
+      <text class="modal-footnote"
+        >{{ loading ? "正在检查登录状态…" : "新账号赠送300精神值 · 仅模拟交易"
+        }}<br />请记好账号密码，暂不提供自助找回。</text
+      >
+    </view>
+  </view>
+  <view v-else class="app-shell">
     <view class="topbar"
       ><view class="brand" @click="tab = 'menu'"
         ><view class="brand-icon">离</view
@@ -266,6 +501,9 @@ async function saveReceipt() {
           ><text class="brand-en">MIND OFFLINE</text></view
         ></view
       ><view class="top-right"
+        ><text class="account-name">@{{ me.username }}</text
+        ><button class="logout-button" :disabled="busy" @click="signOut">
+          退出</button
         ><text class="open-dot"></text><text>人类补给中</text
         ><text class="edition">VOL. 001 / 不想上班</text></view
       ></view
@@ -473,7 +711,7 @@ async function saveReceipt() {
             ><view class="guide-rule"
               ><text>01 / 精神值怎么来？</text
               ><text
-                >首次进入获得300精神值，每天可再领取100。仅用于本站体验，没有现金价值。</text
+                >新账号注册获得300精神值，每天可再领取100。仅用于本站体验，没有现金价值。</text
               ></view
             ><view class="guide-rule"
               ><text>02 / 下单后会发生什么？</text
@@ -483,7 +721,7 @@ async function saveReceipt() {
             ><view class="guide-rule"
               ><text>03 / 我的订单保存在哪里？</text
               ><text
-                >订单保存在服务器，当前浏览器或小程序保存你的访客凭证。清除本地数据后，原身份无法找回；不同设备暂不互通。</text
+                >订单和精神值归属于你的账号。换设备后登录同一账号即可查看；退出后本页会清空个人信息，其他账号看不到你的订单。</text
               ></view
             ><view class="guide-rule"
               ><text>04 / 要填手机号和地址吗？</text
@@ -639,6 +877,161 @@ async function saveReceipt() {
 </template>
 
 <style>
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  max-width: 1440px;
+  margin: auto;
+}
+.auth-story {
+  width: 52%;
+  background: #e7e0f2;
+  padding: 70px 55px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.auth-wordmark {
+  font-size: 14px;
+  letter-spacing: 2px;
+  position: absolute;
+  top: 45px;
+}
+.auth-title {
+  font-size: 42px;
+  font-weight: 900;
+  line-height: 1.5;
+  z-index: 1;
+  letter-spacing: -1px;
+}
+.auth-title text {
+  color: #6e55a4;
+}
+.auth-star {
+  font-size: 230px;
+  line-height: 1.2;
+  color: #c7d987;
+  align-self: flex-end;
+  transform: rotate(15deg);
+}
+.auth-subtitle {
+  font-size: 13px;
+  color: #8b7e9a;
+}
+.auth-card {
+  width: 390px;
+  max-width: calc(100% - 40px);
+  margin: auto;
+  padding: 40px 0;
+}
+.auth-tabs {
+  display: flex;
+  margin: 22px 0 8px;
+  border-bottom: 1px solid #d9d8cd;
+}
+.auth-tabs button {
+  flex: 1;
+  padding: 12px;
+  font-size: 13px;
+  color: #8a8b7b;
+  border-bottom: 2px solid transparent;
+}
+.auth-tabs .picked {
+  color: #6550a0;
+  border-color: #6550a0;
+}
+.auth-input {
+  width: 100%;
+  height: 45px;
+  border: 1px solid #d7d9cb;
+  border-radius: 5px;
+  background: #faf9f2;
+  padding: 0 12px;
+  font-size: 13px;
+}
+.auth-card .primary {
+  margin-top: 25px;
+}
+.auth-error {
+  display: block;
+  font-size: 12px;
+  color: #a15136;
+  line-height: 1.8;
+  margin-top: 16px;
+}
+.legacy-option {
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 20px;
+  color: #66518d;
+  cursor: pointer;
+}
+.legacy-option text {
+  display: block;
+}
+.logout-button {
+  font-size: 11px;
+  border: 1px solid #cbc7d5;
+  padding: 5px 9px;
+  border-radius: 4px;
+}
+.account-name {
+  font-size: 12px;
+  color: #6e55a4;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.auth-card .field-label {
+  margin-top: 18px;
+}
+@media (max-width: 760px) {
+  .auth-page {
+    display: block;
+  }
+  .auth-story {
+    width: 100%;
+    padding: 70px 25px 28px;
+    min-height: 240px;
+  }
+  .auth-wordmark {
+    top: 28px;
+    font-size: 11px;
+  }
+  .auth-title {
+    font-size: 28px;
+  }
+  .auth-star {
+    font-size: 150px;
+    position: absolute;
+    right: 0;
+    bottom: 10px;
+    opacity: 0.5;
+  }
+  .auth-subtitle {
+    font-size: 10px;
+    margin-top: 18px;
+    z-index: 1;
+  }
+  .auth-card {
+    width: 380px;
+    padding: 28px 0;
+  }
+  .account-name {
+    font-size: 10px;
+    max-width: 95px;
+  }
+  .top-right .open-dot,
+  .top-right > .edition {
+    display: none;
+  }
+  .logout-button {
+    font-size: 10px;
+  }
+}
+
 .app-shell {
   max-width: 1440px;
   margin: 0 auto;

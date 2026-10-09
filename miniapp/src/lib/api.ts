@@ -13,6 +13,8 @@ export interface Dish {
   available: boolean;
 }
 export interface Guest {
+  id: string;
+  username: string;
   balance: number;
   claimed_today: boolean;
 }
@@ -35,11 +37,22 @@ export interface Order {
   created_at: string;
   items: Line[];
 }
+export const SESSION_KEY = "mind-offline-session";
+export const currentToken = () => uni.getStorageSync(SESSION_KEY) || "";
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 export function request<T>(
   path: string,
   method: "GET" | "POST" = "GET",
   data?: Record<string, unknown>,
 ): Promise<T> {
+  const sentToken = currentToken();
   return new Promise((resolve, reject) =>
     uni.request({
       url: base + "/api" + path,
@@ -47,25 +60,24 @@ export function request<T>(
       data,
       header: {
         "Content-Type": "application/json",
-        Authorization:
-          "Bearer " + (uni.getStorageSync("mind-offline-token") || ""),
+        Authorization: "Bearer " + sentToken,
       },
       timeout: 15000,
       success: (r) => {
+        if (sentToken !== currentToken()) {
+          reject(new ApiError("账号已切换，请重试", 0));
+          return;
+        }
         if (r.statusCode >= 200 && r.statusCode < 300) resolve(r.data as T);
         else
           reject(
-            new Error((r.data as any)?.error || "食堂暂时忙不过来，请稍后再试"),
+            new ApiError(
+              (r.data as any)?.error || "食堂暂时忙不过来，请稍后再试",
+              r.statusCode,
+            ),
           );
       },
       fail: () => reject(new Error("信号也精神离职了，请检查网络后重试")),
     }),
   );
-}
-export async function connect() {
-  if (!uni.getStorageSync("mind-offline-token")) {
-    const s = await request<{ token: string }>("/guest", "POST");
-    uni.setStorageSync("mind-offline-token", s.token);
-  }
-  return request<Guest>("/me");
 }

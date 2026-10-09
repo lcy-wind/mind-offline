@@ -5,6 +5,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 def run(args, cwd=root, env=None):
     subprocess.run(args, cwd=cwd, env=env, check=True)
+run(['npm', 'test'], root / 'miniapp')
 run(['npm', 'run', 'type-check'], root / 'miniapp')
 run(['npm', 'run', 'build:h5'], root / 'miniapp')
 run(['npm', 'run', 'build:mp-weixin'], root / 'miniapp')

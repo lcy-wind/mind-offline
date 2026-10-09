@@ -2,6 +2,15 @@ CREATE TABLE IF NOT EXISTS guests (
  id text PRIMARY KEY, token_hash text UNIQUE NOT NULL, balance integer NOT NULL DEFAULT 300 CHECK(balance>=0),
  last_claim date, created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS accounts (
+ id text PRIMARY KEY REFERENCES guests(id), username text UNIQUE NOT NULL,
+ password_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS customer_sessions (
+ token_hash text PRIMARY KEY, account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS customer_sessions_account ON customer_sessions(account_id);
 CREATE TABLE IF NOT EXISTS dishes (
  id serial PRIMARY KEY, name text NOT NULL, description text NOT NULL, category text NOT NULL,
  emoji text NOT NULL, price integer NOT NULL CHECK(price BETWEEN 1 AND 200), available boolean NOT NULL DEFAULT true
