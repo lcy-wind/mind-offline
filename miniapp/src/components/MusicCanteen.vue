@@ -24,7 +24,7 @@ const frameKey = ref(0);
       allow="autoplay"
       referrerpolicy="no-referrer"
     ></iframe>
-    <text class="canteen-note footer">搜索与播放由第三方站点提供；离开音乐食堂会停止播放。页面空白时可重新加载。</text>
+    <text class="canteen-note footer">精神食粮不限量供应，吃饱了再假装热爱工作。</text>
     <!-- #endif -->
     <!-- #ifndef H5 -->
     <text class="canteen-note">音乐食堂目前支持网页试玩版，请在浏览器打开食堂使用。</text>
