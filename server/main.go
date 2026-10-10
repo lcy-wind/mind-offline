@@ -59,15 +59,18 @@ type Line struct {
 	Mood     string `json:"mood"`
 }
 type Order struct {
-	ID        string          `json:"id"`
-	Number    int64           `json:"number"`
-	Total     int             `json:"total"`
-	Status    string          `json:"status"`
-	Mood      string          `json:"mood"`
-	Note      string          `json:"note"`
-	Quote     string          `json:"quote"`
-	CreatedAt time.Time       `json:"created_at"`
-	Items     json.RawMessage `json:"items"`
+	AutoStartedAt *time.Time      `json:"auto_started_at"`
+	ServerTime    time.Time       `json:"server_time"`
+	StepSeconds   int             `json:"step_seconds"`
+	ID            string          `json:"id"`
+	Number        int64           `json:"number"`
+	Total         int             `json:"total"`
+	Status        string          `json:"status"`
+	Mood          string          `json:"mood"`
+	Note          string          `json:"note"`
+	Quote         string          `json:"quote"`
+	CreatedAt     time.Time       `json:"created_at"`
+	Items         json.RawMessage `json:"items"`
 }
 type key string
 
@@ -330,11 +333,13 @@ func (a *app) menu(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, 200, ds)
 }
 
-const orderCols = "id,number,total,status,mood,note,quote,created_at,items"
+const orderCols = "id,number,total,status,mood,note,quote,created_at,items,auto_started_at"
 
 func scanOrder(row pgx.Row) (Order, error) {
 	var o Order
-	e := row.Scan(&o.ID, &o.Number, &o.Total, &o.Status, &o.Mood, &o.Note, &o.Quote, &o.CreatedAt, &o.Items)
+	e := row.Scan(&o.ID, &o.Number, &o.Total, &o.Status, &o.Mood, &o.Note, &o.Quote, &o.CreatedAt, &o.Items, &o.AutoStartedAt)
+	o.ServerTime = time.Now().UTC()
+	o.StepSeconds = 30
 	return o, e
 }
 func (a *app) listOrders(w http.ResponseWriter, r *http.Request, admin bool) {
@@ -505,6 +510,10 @@ func (a *app) updateOrder(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if in.Status != "cancelled" {
+		fail(w, 409, "订单已自动出餐，无需手动推进状态")
+		return
+	}
 	ctx := r.Context()
 	tx, e := a.db.Begin(ctx)
 	if e != nil {
@@ -641,6 +650,9 @@ func main() {
 		log.Fatal("invalid music service configuration")
 	}
 	a := &app{db: db, adminPassword: pw, music: music, ai: configureHealing()}
+	autoContext, stopAutomaticOrders := context.WithCancel(context.Background())
+	defer stopAutomaticOrders()
+	go a.runAutomaticOrders(autoContext)
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:18082"
@@ -650,6 +662,7 @@ func main() {
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-done
+		stopAutomaticOrders()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)

@@ -27,6 +27,9 @@ export interface Line {
   mood: string;
 }
 export interface Order {
+  auto_started_at?: string | null;
+  server_time?: string;
+  step_seconds?: number;
   id: string;
   number: number;
   total: number;

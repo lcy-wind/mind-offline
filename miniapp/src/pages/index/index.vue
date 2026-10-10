@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { orderProgress } from "../../lib/order-progress";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import MusicPanel from "../../components/MusicLab.vue";
 import HealingChat from "../../components/HealingChat.vue";
@@ -64,6 +65,7 @@ function clearPrivateState() {
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
   cart.value = [];
   orders.value = [];
+  orderClockOffset = 0;
   receipt.value = null;
   selected.value = null;
   cartOpen.value = false;
@@ -192,7 +194,7 @@ const active = computed(
       .length,
 );
 const labels: Record<string, string> = {
-  pending: "店长正在装作没看见",
+  pending: "自动排队，快乐即将开锅",
   cooking: "厨师正在与食材沟通",
   ready: "精神食粮已出锅",
   completed: "今日精神已充值",
@@ -200,6 +202,11 @@ const labels: Record<string, string> = {
 };
 const steps = ["pending", "cooking", "ready", "completed"];
 let timer: ReturnType<typeof setInterval> | undefined;
+let orderClockTimer: ReturnType<typeof setInterval> | undefined;
+const orderClock = ref(Date.now());
+let orderClockOffset = 0, lastProgressRefresh = 0;
+const progressOf = (order: Order) => orderProgress(order, orderClock.value);
+onUnmounted(() => { clearInterval(timer); clearInterval(orderClockTimer); });
 let fetching = false;
 function toast(t: string) {
   uni.showToast({ title: t, icon: "none", duration: 2200 });
@@ -229,6 +236,9 @@ async function refresh() {
     void checkPlayerBinding();
     menu.value = ds;
     orders.value = os;
+    const serverTime = Date.parse(os[0]?.server_time || "");
+    if (Number.isFinite(serverTime)) orderClockOffset = serverTime - Date.now();
+    orderClock.value = Date.now() + orderClockOffset;
     if (changed)
       cart.value = uni.getStorageSync("mind-offline-cart:" + g.id) || [];
     error.value = "";
@@ -240,6 +250,15 @@ async function refresh() {
   }
 }
 onShow(() => {
+  clearInterval(timer); clearInterval(orderClockTimer);
+  orderClock.value = Date.now() + orderClockOffset;
+  orderClockTimer = setInterval(() => {
+    orderClock.value = Date.now() + orderClockOffset;
+    if (tab.value === "orders" && !busy.value && Date.now() - lastProgressRefresh >= 2000 && orders.value.some(o => progressOf(o).due)) {
+      lastProgressRefresh = Date.now();
+      refresh();
+    }
+  }, 1000);
   musicForeground.value = true;
   refresh();
   timer = setInterval(() => {
@@ -247,10 +266,12 @@ onShow(() => {
   }, 8000);
 });
 onHide(() => {
+  clearInterval(orderClockTimer);
   musicForeground.value = false;
   clearInterval(timer);
 });
 onUnload(() => {
+  clearInterval(orderClockTimer);
   healingChat.value?.stop();
   musicLab.value?.stop();
   clearInterval(timer);
@@ -790,9 +811,13 @@ async function saveReceipt() {
                 :class="{ done: steps.indexOf(o.status) >= i }"
                 ><view class="progress-line"></view
                 ><text>{{
-                  ["已提交", "制作中", "可取餐", "已完成"][i]
+                  ["已下单", "制作中", "可取餐", "已完成"][i]
                 }}</text></view
               ></view
+            ><view v-if="o.status !== 'cancelled' && o.auto_started_at" class="auto-order-progress">
+              <view class="auto-order-copy"><text>自动出餐 · 每 30 秒推进一步</text><text>{{ progressOf(o).hint }}</text></view>
+              <view class="auto-order-track" role="progressbar" :aria-valuenow="progressOf(o).percent" aria-valuemin="0" aria-valuemax="100" aria-label="出餐进度"><view class="auto-order-fill" :style="{ width: progressOf(o).percent + '%' }" /></view>
+            </view
             ><view class="order-bottom"
               ><text class="muted"
                 >{{ date(o.created_at) }} · {{ o.total }} 精神值</text
@@ -829,7 +854,7 @@ async function saveReceipt() {
             ><view class="guide-rule"
               ><text>02 / 下单后会发生什么？</text
               ><text
-                >店长在后台接单、制作和出餐，你可以在“我的离职单”查看进度。店长没上线时，订单会等待处理。</text
+                >订单自动推进：下单后 30 秒进入制作中，60 秒可取餐，90 秒自动完成。在“我的离职单”可查看进度和倒计时，无需店长操作，关闭网页也会继续。</text
               ></view
             ><view class="guide-rule"
               ><text>03 / 我的订单保存在哪里？</text
@@ -2498,4 +2523,12 @@ async function saveReceipt() {
 .canteen-top-song::after, .canteen-top-controls button::after { border: 0; }
 .canteen-top-status { flex-basis: 100%; color: #a795b2; font-size: 10px; }
 @media (max-width: 760px) { .canteen-top-player { padding: 10px 10px 8px; gap: 8px; } .canteen-top-time { display: none; } .canteen-top-song { flex: 1; max-width: none; } .canteen-top-lyrics { order: 4; flex: 1 0 100%; } .canteen-top-status { order: 5; } .canteen-top-controls { gap: 2px; } .canteen-top-controls button { padding: 6px; } .canteen-top-title { font-size: 12px; } }
+</style>
+
+<style scoped>
+.auto-order-progress { margin-top: 18px; padding: 14px 16px; border-radius: 8px; background: #f0f1e5; }
+.auto-order-copy { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: #939a77; font-size: 11px; line-height: 1.6; }
+.auto-order-copy > text:last-child { color: #7c8960; }
+.auto-order-track { height: 7px; margin-top: 10px; border-radius: 8px; overflow: hidden; background: #e1e5cd; }
+.auto-order-fill { height: 100%; border-radius: inherit; background: #a9bd73; transition: width .8s linear; }
 </style>

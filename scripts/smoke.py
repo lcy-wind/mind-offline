@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exercise real API transactions. Requires ADMIN_PASSWORD; writes scoped cleanup SQL."""
-import concurrent.futures, hashlib, json, os, secrets, urllib.request, urllib.error
+import concurrent.futures, hashlib, json, os, secrets, time, urllib.request, urllib.error
 from pathlib import Path
 base=os.environ.get('BASE_URL','http://127.0.0.1:18082').rstrip('/')
 if urllib.parse.urlparse(base).hostname in ('127.0.0.1', 'localhost'):
@@ -71,7 +71,7 @@ try:
     forged=order_payload(dish_id);forged['items'][0]['price']=1;call('/orders','POST',forged,t,400)
     high=order_payload(dish_id,10);high['items']*=2;call('/orders','POST',high,t,409)
     call('/admin/orders/'+first['id'],'PATCH',{'status':'completed'},admin_token,409)
-    call('/admin/orders/'+first['id'],'PATCH',{'status':'cooking'},admin_token)
+    call('/admin/orders/'+first['id'],'PATCH',{'status':'cooking'},admin_token,409)
     call('/admin/orders/'+first['id'],'PATCH',{'status':'cancelled'},admin_token)
     assert call('/me',token=t)['balance']==400
     call('/admin/orders/'+first['id'],'PATCH',{'status':'cancelled'},admin_token,409)
@@ -85,7 +85,13 @@ try:
     assert call('/me',token=t)['balance']==400
     second=call('/orders','POST',order_payload(dish_id,1),t,201)
     for status in ['cooking','ready','completed']:
-        call('/admin/orders/'+second['id'],'PATCH',{'status':status},admin_token)
+        call('/admin/orders/'+second['id'],'PATCH',{'status':status},admin_token,409)
+    deadline=time.monotonic()+110
+    while True:
+        state=next(o for o in call('/orders',token=t) if o['id']==second['id'])['status']
+        if state=='completed':break
+        assert time.monotonic()<deadline,'automatic order did not complete'
+        time.sleep(2)
     dish['available']=False
     call('/admin/dishes/'+str(dish_id),'PUT',dish,admin_token)
     call('/orders','POST',order_payload(dish_id),t,409)

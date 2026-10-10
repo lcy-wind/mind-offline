@@ -132,16 +132,11 @@ const dishSearch = ref(""),
   dishStatus = ref("all");
 const categories = ["续命主食", "精神饮品", "摸鱼小食", "离职套餐"];
 const labels: Record<string, string> = {
-  pending: "待接单",
+  pending: "自动排队",
   cooking: "制作中",
   ready: "待取餐",
   completed: "已完成",
   cancelled: "已取消",
-};
-const next: Record<string, { status: string; label: string }> = {
-  pending: { status: "cooking", label: "接单 · 开始制作" },
-  cooking: { status: "ready", label: "出餐 · 可以取餐" },
-  ready: { status: "completed", label: "确认完成" },
 };
 const sections = [
   { id: "overview", icon: "◈", name: "经营概览", en: "OVERVIEW" },
@@ -527,7 +522,7 @@ onUnmounted(() => {
   <div v-if="!token" class="login-page">
     <div class="login-art">
       <span class="wordmark">精神离职 / MIND OFFLINE</span>
-      <h1>店长可以摸鱼，<br /><em>但别忘了出餐。</em></h1>
+      <h1>店长安心摸鱼，<br /><em>餐点自动出锅。</em></h1>
       <div class="big-symbol">✳</div>
       <p>这里没有绩效考核，只有等待快乐的打工人。</p>
     </div>
@@ -755,7 +750,7 @@ onUnmounted(() => {
           <div class="section-intro">
             <div>
               <h2>接住每一份精神离职申请。</h2>
-              <p>从接单到出餐，顾客端会同步显示订单进度。</p>
+              <p>自动出餐：每 30 秒推进一步，90 秒自动完成，无需手动接单。</p>
             </div>
             <span class="count-badge">{{ orderResult.total }} 笔匹配订单</span>
           </div>
@@ -829,21 +824,9 @@ onUnmounted(() => {
               <div class="order-total">
                 精神支出 <b>{{ o.total }} 点</b>
               </div>
-              <div v-if="next[o.status]" class="actions">
-                <button
-                  v-if="['pending', 'cooking'].includes(o.status)"
-                  class="cancel"
-                  :disabled="busy"
-                  @click="update(o, 'cancelled')"
-                >
-                  取消</button
-                ><button
-                  class="primary"
-                  :disabled="busy"
-                  @click="update(o, next[o.status].status)"
-                >
-                  {{ next[o.status].label }} →
-                </button>
+              <div v-if="['pending','cooking','ready'].includes(o.status)" class="actions">
+                <span class="muted">自动出餐中 · 每 30 秒推进</span>
+                <button v-if="['pending','cooking'].includes(o.status)" class="cancel" :disabled="busy" @click="update(o, 'cancelled')">取消并退回精神值</button>
               </div>
               <p v-else class="closed-note">
                 {{
@@ -1196,21 +1179,9 @@ onUnmounted(() => {
               </div>
               <p v-if="o.note" class="note">顾客说：{{ o.note }}</p>
               <p class="muted">最后更新 {{ date(o.updated_at, true) }}</p>
-              <div v-if="next[o.status]" class="actions">
-                <button
-                  v-if="['pending', 'cooking'].includes(o.status)"
-                  class="cancel"
-                  :disabled="busy"
-                  @click="update(o, 'cancelled')"
-                >
-                  取消订单</button
-                ><button
-                  class="primary"
-                  :disabled="busy"
-                  @click="update(o, next[o.status].status)"
-                >
-                  {{ next[o.status].label }}
-                </button>
+              <div v-if="['pending','cooking','ready'].includes(o.status)" class="actions">
+                <span class="muted">自动出餐中 · 每 30 秒推进</span>
+                <button v-if="['pending','cooking'].includes(o.status)" class="cancel" :disabled="busy" @click="update(o, 'cancelled')">取消并退回精神值</button>
               </div>
             </div>
           </details>

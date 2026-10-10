@@ -113,3 +113,13 @@ CREATE TABLE IF NOT EXISTS healing_turns (
  PRIMARY KEY(conversation_id,request_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS healing_one_pending ON healing_turns(conversation_id) WHERE status='pending';
+
+-- Existing active orders resume from their current stage, with 30 seconds left.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS auto_started_at timestamptz;
+UPDATE orders SET auto_started_at=now()-CASE status
+ WHEN 'cooking' THEN interval '30 seconds' WHEN 'ready' THEN interval '60 seconds'
+ ELSE interval '0 seconds' END
+WHERE auto_started_at IS NULL AND status IN ('pending','cooking','ready');
+ALTER TABLE orders ALTER COLUMN auto_started_at SET DEFAULT now();
+CREATE INDEX IF NOT EXISTS orders_automatic_active ON orders(auto_started_at)
+ WHERE status IN ('pending','cooking','ready');
