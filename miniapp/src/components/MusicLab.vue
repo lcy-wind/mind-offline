@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import MusicPanel from "./MusicPanel.vue";
+import MusicCanteen from "./MusicCanteen.vue";
 import { player, playerState, type MusicProvider } from "../lib/player";
 const props = defineProps<{ accountId: string; foreground: boolean }>();
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
-const active = ref<MusicProvider>(
+const active = ref<MusicProvider | "canteen">(
   playerState.track ? playerState.provider : "netease",
 );
-function select(provider: MusicProvider) {
+function select(provider: MusicProvider | "canteen") {
   if (active.value !== provider) {
     player.reset();
     active.value = provider;
@@ -22,10 +23,20 @@ function select(provider: MusicProvider) {
     >
       <text>♫</text> 网易云音乐</button
     ><button :class="{ selected: active === 'kugou' }" @click="select('kugou')">
-      <text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text>
+      <text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text></button
+    ><button
+      :class="{ selected: active === 'canteen' }"
+      @click="select('canteen')"
+    >
+      <text>⌕</text> 音乐食堂
     </button></view
-  ><view class="platform-hint">两个平台独立绑定；切换平台会停止当前播放。</view
-  ><MusicPanel
+  ><view class="platform-hint"
+    >网易云、酷狗账号分别绑定，切换栏目会停止当前播放。</view
+  ><MusicCanteen
+    v-if="active === 'canteen'"
+    :key="props.accountId"
+  /><MusicPanel
+    v-else
     :key="props.accountId + active"
     :account-id="props.accountId"
     :foreground="props.foreground"
@@ -74,11 +85,11 @@ function select(provider: MusicProvider) {
 }
 @media (max-width: 760px) {
   .music-platforms button {
-    padding: 11px 13px;
-    font-size: 11px;
+    padding: 10px 7px;
+    font-size: 10px;
     flex: 1;
     justify-content: center;
-    gap: 6px;
+    gap: 4px;
   }
   .platform-hint {
     font-size: 9px;
