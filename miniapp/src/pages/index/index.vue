@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import MusicPanel from "../../components/MusicLab.vue";
 import MiniPlayer from "../../components/MiniPlayer.vue";
+import MusicCanteen from "../../components/MusicCanteen.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);
 import {
@@ -58,6 +59,11 @@ function clearPrivateState() {
   cartOpen.value = false;
   note.value = "";
   tab.value = "menu";
+}
+function openMusicCanteen() {
+  if (!ensureSession()) return;
+  player.reset();
+  tab.value = "canteen";
 }
 function ensureSession() {
   if (!currentToken() || currentToken() !== displayedToken || !me.value.id) {
@@ -570,10 +576,17 @@ async function saveReceipt() {
         >
         <view
           class="nav-item"
+          :class="{ active: tab === 'canteen' }"
+          @click="openMusicCanteen"
+          ><text>♪</text><text>音乐食堂</text
+          ><text class="nav-index">04</text></view
+        >
+        <view
+          class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">04</text></view
+          ><text class="nav-index">05</text></view
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -780,6 +793,7 @@ async function saveReceipt() {
           :foreground="musicForeground"
           @auth-expired="forgetSession"
         />
+        <MusicCanteen v-if="tab === 'canteen'" :key="me.id" />
         <template v-if="tab === 'about'"
           ><view class="page-heading"
             ><text class="eyebrow">EMPLOYEE SURVIVAL GUIDE</text
@@ -2445,6 +2459,14 @@ async function saveReceipt() {
   }
   .menu-search-summary {
     font-size: 9px;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 760px) {
+  .sidebar .nav-item {
+    flex: 1 1 calc((100% - 10px) / 3);
   }
 }
 </style>
