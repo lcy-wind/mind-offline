@@ -9,9 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 const audiusBase = "https://api.audius.co/v1"
@@ -21,6 +19,9 @@ var audiusClient = &http.Client{Timeout: 10 * time.Second}
 var audiusID = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
 
 type canteenTrack struct {
+	Source   string `json:"source"`
+	Version  string `json:"version"`
+	Album    string `json:"album"`
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Artist   string `json:"artist"`
@@ -72,34 +73,7 @@ func searchCanteen(ctx context.Context, client *http.Client, q string, offset in
 		if !audiusID.MatchString(t.ID) || !t.Available || !t.Streamable || t.Gated || t.Unlisted || t.Deleted || !t.Access.Stream {
 			continue
 		}
-		tracks = append(tracks, canteenTrack{ID: t.ID, Name: t.Title, Artist: t.User.Name, Genre: t.Genre, Duration: t.Duration, URL: audiusBase + "/tracks/" + t.ID + "/stream?app_name=mind-offline"})
+		tracks = append(tracks, canteenTrack{Source: "audius", Version: catalogVersion(t.Title), ID: t.ID, Name: t.Title, Artist: t.User.Name, Genre: t.Genre, Duration: t.Duration, URL: audiusBase + "/tracks/" + t.ID + "/stream?app_name=mind-offline"})
 	}
 	return tracks, len(payload.Data) == canteenPageSize, nil
-}
-
-func (a *app) canteenSearch(w http.ResponseWriter, r *http.Request) {
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" {
-		q = "lofi"
-	}
-	offset := 0
-	var err error
-	if raw := r.URL.Query().Get("offset"); raw != "" {
-		offset, err = strconv.Atoi(raw)
-	}
-	if utf8.RuneCountInString(q) > 80 || err != nil || offset < 0 || offset > 2400 {
-		fail(w, 400, "搜索词或页码不正确")
-		return
-	}
-	owner := r.Context().Value(guestKey).(string)
-	if !a.limits.allow("canteen-search:"+owner, 20) {
-		fail(w, 429, "搜歌太快啦，请稍后再试")
-		return
-	}
-	tracks, more, err := searchCanteen(r.Context(), audiusClient, q, offset)
-	if err != nil {
-		fail(w, 502, "曲库暂时没有回应，请稍后重试")
-		return
-	}
-	jsonOut(w, 200, map[string]any{"tracks": tracks, "has_more": more, "next_offset": offset + canteenPageSize, "source": "Audius"})
 }
