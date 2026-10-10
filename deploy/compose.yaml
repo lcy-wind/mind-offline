@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     network_mode: host
     env_file: production.env
+    volumes:
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
