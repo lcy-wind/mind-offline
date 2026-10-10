@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { request, ApiError } from "../lib/api";
+import { player as platformPlayer } from "../lib/player";
 import { createQueueOrder, moveQueue, type PlayMode } from "../lib/canteen-queue";
 import { parseLyrics, activeLyricIndex, type Lyrics } from "../lib/lyrics";
 type Source = "netease" | "joox" | "audius";
@@ -236,6 +237,7 @@ async function play(index: number, fromResults = false, preserveOrder = false) {
   // #ifdef H5
   const nextTrack = (fromResults ? visibleTracks.value : queue.value)[index];
   if (!nextTrack) return;
+  platformPlayer.reset();
   const run = ++playGeneration;
   resolving.value = true;
   audio.value?.pause();
@@ -291,6 +293,17 @@ function stop() {
   playback.value = "";
   resolving.value = false;
 }
+const playbackState = computed(() => ({
+  track: selected.value || null,
+  playing: isPlaying.value,
+  loading: resolving.value,
+  canPrevious: canPrevious.value,
+  canNext: canNext.value,
+  time: duration(elapsed.value) + " / " + duration(total.value),
+  mode: modeLabel.value,
+  message: playback.value,
+}));
+defineExpose({ playbackState, togglePlayback, previous: () => step(-1), next: () => step(1), stop });
 onBeforeUnmount(() => { disposed = true; generation++; stop(); });
 </script>
 

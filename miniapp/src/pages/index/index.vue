@@ -5,6 +5,12 @@ import MusicPanel from "../../components/MusicLab.vue";
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);
+const musicLab = ref<InstanceType<typeof MusicPanel> | null>(null);
+const canteenPlayback = computed(() => musicLab.value?.canteenState);
+function openCanteenPlayer() {
+  tab.value = "music";
+  musicLab.value?.openCanteen();
+}
 import {
   request,
   currentToken,
@@ -49,6 +55,7 @@ const authMode = ref<"login" | "register">("login"),
 const hasLegacy = ref(Boolean(uni.getStorageSync("mind-offline-token")));
 let displayedToken = currentToken();
 function clearPrivateState() {
+  musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
   cart.value = [];
@@ -240,6 +247,7 @@ onHide(() => {
   clearInterval(timer);
 });
 onUnload(() => {
+  musicLab.value?.stop();
   clearInterval(timer);
   player.reset();
 });
@@ -541,6 +549,20 @@ async function saveReceipt() {
         ><text class="edition">VOL. 001 / 不想上班</text></view
       ></view
     >
+    <view v-if="canteenPlayback?.track" class="canteen-top-player">
+      <button class="canteen-top-song" @click="openCanteenPlayer" aria-label="返回音乐食堂">
+        <text class="canteen-top-icon">♫</text>
+        <view class="canteen-top-info"><text class="canteen-top-title">{{ canteenPlayback.track.name }}</text><text class="canteen-top-artist">{{ canteenPlayback.track.artist }} · {{ canteenPlayback.mode }}</text></view>
+      </button>
+      <text class="canteen-top-time">{{ canteenPlayback.time }}</text>
+      <view class="canteen-top-controls">
+        <button :disabled="!canteenPlayback.canPrevious" @click="musicLab?.previous()" aria-label="上一首">⏮</button>
+        <button class="canteen-top-toggle" :disabled="canteenPlayback.loading" @click="musicLab?.toggle()" :aria-label="canteenPlayback.playing ? '暂停' : '继续播放'">{{ canteenPlayback.loading ? '…' : canteenPlayback.playing ? 'Ⅱ' : '▶' }}</button>
+        <button :disabled="!canteenPlayback.canNext" @click="musicLab?.next()" aria-label="下一首">⏭</button>
+        <button class="canteen-top-close" @click="musicLab?.stop()" aria-label="关闭音乐">×</button>
+      </view>
+      <text class="canteen-top-status" role="status">{{ canteenPlayback.message }}</text>
+    </view>
     <view class="layout">
       <view class="sidebar">
         <view class="side-title">今日营业，精神随缘。</view>
@@ -774,10 +796,12 @@ async function saveReceipt() {
           ></template
         >
         <MusicPanel
-          v-if="tab === 'music'"
+          v-if="me.id"
+          v-show="tab === 'music'"
+          ref="musicLab"
           :key="me.id"
           :account-id="me.id"
-          :foreground="musicForeground"
+          :foreground="musicForeground && tab === 'music'"
           @auth-expired="forgetSession"
         />
         <template v-if="tab === 'about'"
@@ -2447,4 +2471,22 @@ async function saveReceipt() {
     font-size: 9px;
   }
 }
+</style>
+
+<style scoped>
+.canteen-top-player { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0 0; padding: 12px 18px 9px; border: 1px solid #d5c7df; border-radius: 10px; background: #f0e9f6; box-shadow: 0 4px 18px #65517616; }
+.canteen-top-song { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; margin: 0; padding: 0; text-align: left; background: transparent; border: 0; }
+.canteen-top-icon { color: #9271a8; font-size: 27px; }
+.canteen-top-info { flex: 1; min-width: 0; }
+.canteen-top-title { display: block; font-size: 14px; font-weight: 600; color: #6e5285; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.canteen-top-artist { display: block; font-size: 10px; color: #9c89a8; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.canteen-top-time { color: #9c89a8; font-size: 11px; font-variant-numeric: tabular-nums; }
+.canteen-top-controls { display: flex; align-items: center; gap: 8px; }
+.canteen-top-controls button { border: 0; margin: 0; padding: 7px 9px; background: transparent; color: #85649b; font-size: 17px; line-height: 1.4; }
+.canteen-top-controls .canteen-top-toggle { background: #806096; color: white; border-radius: 50%; width: 36px; height: 36px; padding: 5px; }
+.canteen-top-controls button:disabled { opacity: .4; }
+.canteen-top-controls .canteen-top-close { color: #b5a3be; font-size: 20px; }
+.canteen-top-song::after, .canteen-top-controls button::after { border: 0; }
+.canteen-top-status { flex-basis: 100%; color: #a795b2; font-size: 10px; }
+@media (max-width: 760px) { .canteen-top-player { padding: 10px 10px 8px; gap: 8px; } .canteen-top-time { display: none; } .canteen-top-controls { gap: 2px; } .canteen-top-controls button { padding: 6px; } .canteen-top-title { font-size: 12px; } }
 </style>

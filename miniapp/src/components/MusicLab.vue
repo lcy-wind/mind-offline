@@ -1,41 +1,54 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, watch } from "vue";
 import MusicPanel from "./MusicPanel.vue";
 import MusicCanteen from "./MusicCanteen.vue";
-import { player, type MusicProvider } from "../lib/player";
+import { playerState, type MusicProvider } from "../lib/player";
 const props = defineProps<{ accountId: string; foreground: boolean }>();
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 const active = ref<MusicProvider | "canteen">(
   "canteen",
 );
-onMounted(() => player.reset());
+const canteen = ref<InstanceType<typeof MusicCanteen> | null>(null);
+const canteenState = computed(() => canteen.value?.playbackState);
+// Browsing another provider leaves music playing; choosing a song hands over audio.
+watch(() => playerState.track, track => { if (track) canteen.value?.stop(); }, { flush: "sync" });
+defineExpose({
+  canteenState,
+  toggle: () => canteen.value?.togglePlayback(),
+  previous: () => canteen.value?.previous(),
+  next: () => canteen.value?.next(),
+  stop: () => canteen.value?.stop(),
+  openCanteen: () => { active.value = "canteen"; },
+});
 function select(provider: MusicProvider | "canteen") {
   if (active.value !== provider) {
-    player.reset();
     active.value = provider;
   }
 }
 </script>
 <template>
+  <view class="music-lab-container">
   <view class="music-platforms">
     <button :class="{ selected: active === 'canteen' }" @click="select('canteen')"><text>♫</text> 音乐食堂</button>
     <button :class="{ selected: active === 'netease' }" @click="select('netease')"><text>♫</text> 网易云音乐</button>
     <button :class="{ selected: active === 'kugou' }" @click="select('kugou')"><text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text></button>
   </view>
   <view class="platform-hint"
-    >网易云、酷狗账号分别绑定，切换栏目会停止当前播放。</view
+    >切换页面继续播放；选择另一平台的歌曲时，自动切换播放。</view
   ><MusicCanteen
-    v-if="active === 'canteen'"
+    v-show="active === 'canteen'"
+    ref="canteen"
     :key="props.accountId"
     @auth-expired="emit('auth-expired')"
   /><MusicPanel
-    v-else
+    v-if="active !== 'canteen'"
     :key="props.accountId + active"
     :account-id="props.accountId"
     :foreground="props.foreground"
     :provider="active"
     @auth-expired="emit('auth-expired')"
   />
+  </view>
 </template>
 <style scoped>
 .music-platforms {
