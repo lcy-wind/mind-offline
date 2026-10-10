@@ -237,6 +237,8 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/music/netease/qr/cancel", a.customer(a.musicCancel))
 	m.HandleFunc("POST /api/music/netease/unbind", a.customer(a.musicUnbind))
 	m.HandleFunc("GET /api/music/netease/playlists", a.customer(a.musicPlaylists))
+	m.HandleFunc("GET /api/music/netease/tracks", a.customer(a.musicTracks))
+	m.HandleFunc("POST /api/music/netease/playback", a.customer(a.musicPlayback))
 	m.HandleFunc("GET /api/menu", a.menu)
 	m.HandleFunc("GET /api/me", a.customer(a.me))
 	m.HandleFunc("POST /api/claim", a.customer(a.claim))

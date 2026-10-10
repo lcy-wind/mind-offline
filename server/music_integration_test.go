@@ -37,9 +37,11 @@ func TestMusicIntegration(t *testing.T) {
 	var code atomic.Int32
 	code.Store(801)
 	var expired atomic.Bool
-	var beforeCheck, beforePlaylists func()
+	var beforeCheck, beforePlaylists, beforePlayback func()
+	var playbackMode atomic.Int32
 	var hookMu sync.Mutex
 	setCheckHook := func(fn func()) { hookMu.Lock(); beforeCheck = fn; hookMu.Unlock() }
+	setPlaybackHook := func(fn func()) { hookMu.Lock(); beforePlayback = fn; hookMu.Unlock() }
 	setPlaylistHook := func(fn func()) { hookMu.Lock(); beforePlaylists = fn; hookMu.Unlock() }
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input map[string]json.RawMessage
@@ -61,6 +63,30 @@ func TestMusicIntegration(t *testing.T) {
 			jsonOut(w, 200, out)
 		case "/account":
 			jsonOut(w, 200, map[string]string{"uid": "1001", "nickname": "测试音乐账号", "avatar": "https://p1.music.126.net/test.png"})
+		case "/tracks":
+			jsonOut(w, 200, map[string]any{"uid": "1001", "playlist_id": "123", "name": "test", "offset": 0, "total": 1, "more": false, "items": []map[string]any{{"id": "456", "name": "test song", "artist": "test artist", "duration": 180, "cover": "https://evil.test/cover"}}})
+		case "/playback":
+			hookMu.Lock()
+			hook := beforePlayback
+			hookMu.Unlock()
+			if hook != nil {
+				hook()
+			}
+			var id string
+			_ = json.Unmarshal(input["track_id"], &id)
+			result := musicAudio{UID: "1001", TrackID: id, Status: "playable", URL: "http://m7.music.126.net/test.mp3", ExpiresIn: 300}
+			if playbackMode.Load() == 1 {
+				result.Status = "trial"
+				result.TrialStart = 60
+				result.TrialEnd = 90
+			}
+			if playbackMode.Load() == 2 {
+				result.URL = "https://evil.test/audio"
+			}
+			if playbackMode.Load() == 3 {
+				result.Status = "unavailable"
+			}
+			jsonOut(w, 200, result)
 		case "/playlists":
 			if _, ok := input["uid"]; ok {
 				t.Error("caller-supplied music UID leaked upstream")
@@ -180,6 +206,36 @@ func TestMusicIntegration(t *testing.T) {
 	if item["cover"] != "" || item["url"] != "https://music.163.com/#/playlist?id=123" {
 		t.Fatal("playlist sanitization")
 	}
+	expect(request(base+"/tracks?playlist_id=123", tb, nil), 409)
+	expect(request(base+"/tracks?playlist_id=123&offset=-1", ta, nil), 400)
+	expect(request(base+"/playback", "", map[string]string{"track_id": "456"}), 401)
+	expect(request(base+"/playback", tb, map[string]string{"track_id": "456"}), 409)
+	expect(request(base+"/playback", ta, map[string]string{"track_id": "456", "url": "https://evil.test"}), 400)
+	tracks := request(base+"/tracks?playlist_id=123", ta, nil)
+	expect(tracks, 200)
+	if tracks.body["items"].([]any)[0].(map[string]any)["cover"] != "" {
+		t.Fatal("unsafe cover returned")
+	}
+	media := request(base+"/playback", ta, map[string]string{"track_id": "456"})
+	expect(media, 200)
+	if media.body["url"] != "https://m7.music.126.net/test.mp3" {
+		t.Fatal("audio URL not upgraded safely")
+	}
+	playbackMode.Store(1)
+	media = request(base+"/playback", ta, map[string]string{"track_id": "456"})
+	expect(media, 200)
+	if media.body["status"] != "trial" || media.body["trial_end"] != float64(90) {
+		t.Fatal("trial range not preserved")
+	}
+	for _, mode := range []int32{2, 3} {
+		playbackMode.Store(mode)
+		media = request(base+"/playback", ta, map[string]string{"track_id": "456"})
+		expect(media, 200)
+		if media.body["status"] != "unavailable" || media.body["url"] != "" {
+			t.Fatal("invalid stream exposed")
+		}
+	}
+	playbackMode.Store(0)
 	second := request(base+"/qr", tb, map[string]any{})
 	expect(second, 201)
 	bAttempt := second.body["attempt_id"].(string)
@@ -189,7 +245,15 @@ func TestMusicIntegration(t *testing.T) {
 	done := make(chan reply, 1)
 	go func() { done <- request(base+"/playlists", ta, nil) }()
 	<-started
+	playbackStarted, playbackRelease := make(chan struct{}), make(chan struct{})
+	setPlaybackHook(func() { close(playbackStarted); <-playbackRelease })
+	playbackDone := make(chan reply, 1)
+	go func() { playbackDone <- request(base+"/playback", ta, map[string]string{"track_id": "456"}) }()
+	<-playbackStarted
 	expect(request(base+"/unbind", ta, map[string]any{}), 200)
+	close(playbackRelease)
+	expect(<-playbackDone, 409)
+	setPlaybackHook(nil)
 	close(release)
 	expect(<-done, 409)
 	setPlaylistHook(nil)

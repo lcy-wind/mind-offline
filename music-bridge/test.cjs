@@ -5,7 +5,7 @@ const { once } = require("node:events");
 const { mkdtemp, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
-test("private adapter authenticates and exposes only the four approved routes", async () => {
+test("private adapter authenticates and exposes only approved routes", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mind-offline-music-test-"));
   const secret = "test-bridge-secret-that-is-never-used-in-production";
   const child = spawn(process.execPath, ["server.cjs"], {
@@ -67,4 +67,36 @@ test("private adapter authenticates and exposes only the four approved routes", 
     await once(child, "exit");
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+const { normalizePlayback } = require("./playback.cjs");
+test("playback distinguishes full, trial and unavailable without substituting audio", () => {
+  assert.equal(
+    normalizePlayback({ code: 404, url: null }).status,
+    "unavailable",
+  );
+  assert.equal(
+    normalizePlayback({
+      code: 200,
+      url: "https://m7.music.126.net/test.mp3",
+      freeTrialInfo: null,
+    }).status,
+    "playable",
+  );
+  const preview = normalizePlayback({
+    code: 200,
+    url: "https://m7.music.126.net/preview.mp3",
+    freeTrialInfo: { start: 60, end: 90 },
+  });
+  assert.equal(preview.status, "trial");
+  assert.equal(preview.trial_start, 60);
+  assert.equal(preview.trial_end, 90);
+  assert.equal(
+    normalizePlayback({
+      code: 200,
+      url: "https://m7.music.126.net/test.mp3",
+      freeTrialInfo: {},
+    }).status,
+    "unavailable",
+  );
 });

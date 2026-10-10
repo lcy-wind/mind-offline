@@ -77,3 +77,14 @@ func TestMusicValidation(t *testing.T) {
 		t.Fatal("non-loopback allowed")
 	}
 }
+
+func TestSafeAudioURL(t *testing.T) {
+	for _, raw := range []string{"http://127.0.0.1/a.mp3", "https://music.126.net.evil.test/a", "https://m7.music.126.net:8080/a", "file:///a", "javascript:alert(1)", "https://user:pass@m7.music.126.net/a"} {
+		if safeAudioURL(raw) != "" {
+			t.Fatal("unsafe audio URL", raw)
+		}
+	}
+	if safeAudioURL("http://m7.music.126.net/a.mp3?x=1") != "https://m7.music.126.net/a.mp3?x=1" {
+		t.Fatal("valid HTTPS conversion")
+	}
+}

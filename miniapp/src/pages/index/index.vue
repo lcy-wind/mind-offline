@@ -2,6 +2,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import MusicPanel from "../../components/MusicPanel.vue";
+import MiniPlayer from "../../components/MiniPlayer.vue";
+import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);
 import {
   request,
@@ -46,6 +48,7 @@ const authMode = ref<"login" | "register">("login"),
 const hasLegacy = ref(Boolean(uni.getStorageSync("mind-offline-token")));
 let displayedToken = currentToken();
 function clearPrivateState() {
+  player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
   cart.value = [];
   orders.value = [];
@@ -191,7 +194,9 @@ async function refresh() {
     ]);
     if (expected !== currentToken()) return;
     const changed = me.value.id !== g.id;
+    player.setOwner(g.id);
     me.value = g;
+    void checkPlayerBinding();
     menu.value = ds;
     orders.value = os;
     if (changed)
@@ -215,7 +220,10 @@ onHide(() => {
   musicForeground.value = false;
   clearInterval(timer);
 });
-onUnload(() => clearInterval(timer));
+onUnload(() => {
+  clearInterval(timer);
+  player.reset();
+});
 function choose(d: Dish) {
   if (!ensureSession()) return;
   if (!d.available) return;
@@ -498,7 +506,7 @@ async function saveReceipt() {
       >
     </view>
   </view>
-  <view v-else class="app-shell">
+  <view v-else class="app-shell" :class="{ 'has-player': playerState.track }">
     <view class="topbar"
       ><view class="brand" @click="tab = 'menu'"
         ><view class="brand-icon">离</view
@@ -757,6 +765,7 @@ async function saveReceipt() {
         >
       </view>
     </view>
+    <MiniPlayer @open="tab = 'music'" />
     <view v-if="count && tab === 'menu'" class="cart-bar"
       ><view class="cart-icon"
         >袋<text>{{ count }}</text></view
@@ -2306,5 +2315,14 @@ async function saveReceipt() {
   .sidebar .nav-item > text:first-child {
     font-size: 14px;
   }
+}
+</style>
+
+<style>
+.app-shell.has-player .cart-bar {
+  bottom: calc(137px + env(safe-area-inset-bottom));
+}
+.app-shell.has-player .footer {
+  padding-bottom: 235px;
 }
 </style>

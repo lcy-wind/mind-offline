@@ -1,6 +1,65 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import { request, ApiError } from "../lib/api";
+import {
+  player,
+  playerState,
+  formatTime,
+  type MusicTrack,
+} from "../lib/player";
+const selectedPlaylist = ref<Playlist | null>(null),
+  tracks = ref<MusicTrack[]>([]),
+  tracksLoading = ref(false),
+  tracksMore = ref(false),
+  tracksTotal = ref(0);
+let trackOffset = 0,
+  trackRevision = 0;
+async function openTracks(p: Playlist) {
+  selectedPlaylist.value = p;
+  tracks.value = [];
+  trackOffset = 0;
+  tracksMore.value = false;
+  tracksTotal.value = 0;
+  await loadTracks(false);
+  if (alive && selectedPlaylist.value?.id === p.id) {
+    await nextTick();
+    uni.pageScrollTo({ selector: "#music-tracks", duration: 250 });
+  }
+}
+async function loadTracks(append = false) {
+  const p = selectedPlaylist.value;
+  if (!p) return;
+  const rev = ++trackRevision;
+  tracksLoading.value = true;
+  try {
+    const result = await request<{
+      items: MusicTrack[];
+      total: number;
+      offset: number;
+      more: boolean;
+    }>(
+      "/music/netease/tracks?playlist_id=" +
+        p.id +
+        "&offset=" +
+        (append ? trackOffset : 0),
+    );
+    if (!alive || rev !== trackRevision) return;
+    tracks.value = append ? [...tracks.value, ...result.items] : result.items;
+    tracksTotal.value = result.total;
+    tracksMore.value = result.more;
+    trackOffset = result.offset + 30;
+    player.extendQueue(p.id, tracks.value);
+    error.value = "";
+  } catch (e) {
+    handleError(e);
+  } finally {
+    if (alive && rev === trackRevision) tracksLoading.value = false;
+  }
+}
+function playTrack(t: MusicTrack) {
+  if (selectedPlaylist.value)
+    void player.select(t, tracks.value, selectedPlaylist.value.id);
+}
 const props = defineProps<{ accountId: string; foreground: boolean }>();
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 type Binding = {
@@ -73,7 +132,10 @@ async function retryStatus() {
 async function loadStatus() {
   try {
     const data = await request<Binding>("/music/netease");
-    if (alive) binding.value = data;
+    if (alive) {
+      binding.value = data;
+      if (!data.bound || data.expired) player.reset();
+    }
   } catch (e) {
     handleError(e);
   } finally {
@@ -156,6 +218,7 @@ async function poll() {
     qrState.value = result.status;
     error.value = "";
     if (result.status === "bound") {
+      player.reset();
       qr.value = null;
       await loadStatus();
       await loadPlaylists();
@@ -202,6 +265,10 @@ async function unbind() {
     await request("/music/netease/unbind", "POST");
     if (!alive) return;
     qr.value = null;
+    player.reset();
+    selectedPlaylist.value = null;
+    tracks.value = [];
+    ++trackRevision;
     binding.value = { enabled: true, bound: false };
     playlists.value = [];
     offset.value = 0;
@@ -386,7 +453,7 @@ onUnmounted(() => {
             {{ playlistLoading ? "读取中…" : "↻ 刷新歌单" }}
           </button></view
         ><text class="music-disclosure"
-          >这一版读取歌单并提供网易云入口，暂不在食堂内播放音乐。</text
+          >点开歌单即可在食堂听歌；有试听限制会标注，无法播放时可前往网易云。</text
         ><view v-if="!playlists.length" class="music-empty">{{
           playlistLoading
             ? "正在读取你的歌单…"
@@ -405,6 +472,8 @@ onUnmounted(() => {
               ><text class="muted"
                 >{{ p.created ? "我创建的" : "我收藏的" }} ·
                 {{ p.track_count }} 首</text
+              ><button class="playlist-listen" @click="openTracks(p)">
+                打开歌曲列表 →</button
               ><button class="playlist-link" @click="openPlaylist(p)">
                 前往网易云 ↗
               </button></view
@@ -427,6 +496,75 @@ onUnmounted(() => {
           </button></view
         ></view
       >
+      <view
+        v-if="selectedPlaylist && binding.bound && !binding.expired"
+        id="music-tracks"
+        class="music-card track-section"
+        ><view class="music-section-heading"
+          ><view
+            ><text class="eyebrow">PLAYLIST / {{ tracksTotal }} 首</text
+            ><view class="section-title">{{
+              selectedPlaylist.name
+            }}</view></view
+          ><button
+            class="outline"
+            :disabled="tracksLoading"
+            @click="loadTracks(false)"
+          >
+            刷新
+          </button></view
+        ><text class="music-disclosure"
+          >点击歌曲开始播放，按顺序播放已加载的歌曲；切回菜单可继续听。</text
+        ><view v-if="!tracks.length" class="music-empty">{{
+          tracksLoading
+            ? "正在读取歌曲…"
+            : "暂无可读取的歌曲，可重试或前往网易云。"
+        }}</view
+        ><view
+          v-for="(t, i) in tracks"
+          :key="t.id"
+          class="track-row"
+          :class="{ current: playerState.track?.id === t.id }"
+          ><text class="track-number">{{
+            playerState.track?.id === t.id && playerState.status === "playing"
+              ? "♫"
+              : String(i + 1).padStart(2, "0")
+          }}</text
+          ><image
+            v-if="t.cover"
+            :src="t.cover"
+            mode="aspectFill"
+            class="track-cover"
+          /><view class="track-copy"
+            ><text class="track-name">{{ t.name }}</text
+            ><text class="muted">{{ t.artist }} · {{ t.album }}</text
+            ><text v-if="playerState.track?.id === t.id" class="track-feedback"
+              >{{ playerState.trial ? "试听 · " : ""
+              }}{{ playerState.message }}</text
+            ></view
+          ><text class="track-duration">{{ formatTime(t.duration) }}</text
+          ><button
+            class="track-play"
+            :aria-label="'播放' + t.name"
+            @click="
+              playerState.track?.id === t.id ? player.toggle() : playTrack(t)
+            "
+          >
+            {{
+              playerState.track?.id === t.id && playerState.status === "playing"
+                ? "Ⅱ"
+                : "▶"
+            }}
+          </button></view
+        ><button
+          v-if="tracksMore"
+          class="outline load-tracks"
+          :disabled="tracksLoading"
+          @click="loadTracks(true)"
+        >
+          {{ tracksLoading ? "加载中…" : "加载更多歌曲" }}
+        </button></view
+      >
     </template>
     <view class="music-footer"
       >第三方接口可能变化或受风控影响。每位顾客的绑定独立保存，店长后台不展示音乐登录凭证。</view
@@ -434,6 +572,108 @@ onUnmounted(() => {
   </view>
 </template>
 <style scoped>
+.playlist-listen {
+  font-size: 11px;
+  text-align: left;
+  color: #6f5199;
+  font-weight: 600;
+  padding: 5px 0;
+}
+.track-section .section-title {
+  font-size: 20px;
+  word-break: break-all;
+}
+.track-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 5px;
+  border-bottom: 1px solid #e4e7d7;
+}
+.track-row.current {
+  background: #eee8f5;
+  border-radius: 6px;
+}
+.track-number {
+  font-size: 10px;
+  color: #a0aa8e;
+  width: 21px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.track-cover {
+  height: 36px;
+  width: 36px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.track-copy {
+  flex: 1;
+  min-width: 0;
+}
+.track-name {
+  font-size: 12px;
+  font-weight: 600;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.track-copy .muted {
+  font-size: 9px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 5px;
+}
+.track-feedback {
+  font-size: 9px;
+  color: #9671ae;
+  display: block;
+  margin-top: 4px;
+  line-height: 1.6;
+}
+.track-duration {
+  font-size: 9px;
+  color: #a0aa8f;
+}
+.track-play {
+  width: 30px;
+  height: 30px;
+  background: #e1ecc4;
+  color: #6b8050;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.load-tracks {
+  display: block;
+  width: 100%;
+  margin-top: 18px;
+}
+@media (max-width: 760px) {
+  .track-row {
+    gap: 8px;
+  }
+  .track-duration {
+    display: none;
+  }
+  .track-cover {
+    width: 30px;
+    height: 30px;
+  }
+  .track-number {
+    width: 17px;
+  }
+  .track-name {
+    font-size: 11px;
+  }
+}
+
 .music-hero {
   background: #e8dfef;
   border: 1px solid #d8cbe4;

@@ -12,13 +12,17 @@ process.env.ENABLE_RANDOM_CN_IP = "false";
 const anon = path.join(os.tmpdir(), "anonymous_token");
 if (!fs.existsSync(anon)) fs.writeFileSync(anon, "", { mode: 0o600 });
 const sdk = "@neteasecloudmusicapienhanced/api";
-// Load only the required modules, never main.js/server.js or playback/unlock modules.
+// Load only approved modules; never main.js/server.js or unlock modules.
 const upstream = require(sdk + "/util/request");
 const qrKey = require(sdk + "/module/login_qr_key");
 const qrCreate = require(sdk + "/module/login_qr_create");
 const qrCheck = require(sdk + "/module/login_qr_check");
 const account = require(sdk + "/module/user_account");
 const playlists = require(sdk + "/module/user_playlist");
+const playlistDetail = require(sdk + "/module/playlist_detail");
+const songDetail = require(sdk + "/module/song_detail");
+const createOption = require(sdk + "/util/option");
+const { normalizePlayback, normalizeTrack } = require("./playback.cjs");
 const secret = process.env.NCM_BRIDGE_TOKEN;
 if (!secret || secret.length < 32) throw Error("NCM_BRIDGE_TOKEN is required");
 const secretHash = crypto
@@ -63,7 +67,14 @@ const server = http.createServer(async (req, res) => {
   }
   if (
     req.method !== "POST" ||
-    !["/qr/start", "/qr/check", "/account", "/playlists"].includes(req.url)
+    ![
+      "/qr/start",
+      "/qr/check",
+      "/account",
+      "/playlists",
+      "/tracks",
+      "/playback",
+    ].includes(req.url)
   ) {
     send(res, 404, { error: "not_found" });
     return;
@@ -84,7 +95,10 @@ const server = http.createServer(async (req, res) => {
       send(res, 400, { error: "invalid_json" });
       return;
     }
-    const options = { cookie: body.cookie || {}, timeout: 4000 };
+    const options = {
+      cookie: body.cookie || {},
+      timeout: req.url === "/tracks" ? 2500 : 4000,
+    };
     if (req.url === "/qr/start") {
       const seed = {
         os: "pc",
@@ -129,6 +143,76 @@ const server = http.createServer(async (req, res) => {
         uid: uid(profile.userId),
         nickname: String(profile.nickname || "网易云用户").slice(0, 100),
         avatar: String(profile.avatarUrl || ""),
+      });
+      return;
+    }
+    if (req.url === "/playback") {
+      if (!uid(body.track_id)) {
+        send(res, 400, { error: "invalid_track" });
+        return;
+      }
+      const result = await upstream(
+        "/api/song/enhance/player/url/v1",
+        {
+          ids: "[" + body.track_id + "]",
+          level: "standard",
+          encodeType: "mp3",
+        },
+        createOption(options, "eapi"),
+      );
+      const entry = result.body?.data?.find((t) => uid(t.id) === body.track_id);
+      send(res, 200, {
+        uid: uid(profile.userId),
+        track_id: body.track_id,
+        ...normalizePlayback(entry),
+      });
+      return;
+    }
+    if (req.url === "/tracks") {
+      const offset = Number(body.offset || 0);
+      if (
+        !uid(body.playlist_id) ||
+        !Number.isInteger(offset) ||
+        offset < 0 ||
+        offset > 20000
+      ) {
+        send(res, 400, { error: "invalid_playlist" });
+        return;
+      }
+      const result = await playlistDetail(
+        { ...options, id: body.playlist_id },
+        upstream,
+      );
+      const list = result.body?.playlist;
+      if (!list || !Array.isArray(list.trackIds)) {
+        send(res, 403, { error: "playlist_unavailable" });
+        return;
+      }
+      const ids = list.trackIds
+        .slice(offset, offset + 30)
+        .map((t) => uid(t.id))
+        .filter(Boolean);
+      let songs = [];
+      if (ids.length) {
+        const details = await songDetail(
+          { ...options, ids: ids.join(",") },
+          upstream,
+        );
+        if (details.body?.code !== 200 || !Array.isArray(details.body.songs))
+          throw Error("upstream");
+        songs = ids
+          .map((id) => details.body.songs.find((t) => uid(t.id) === id))
+          .filter(Boolean)
+          .map(normalizeTrack);
+      }
+      send(res, 200, {
+        uid: uid(profile.userId),
+        playlist_id: body.playlist_id,
+        name: String(list.name || "歌单").slice(0, 150),
+        items: songs,
+        total: list.trackIds.length,
+        offset,
+        more: offset + 30 < list.trackIds.length,
       });
       return;
     }
