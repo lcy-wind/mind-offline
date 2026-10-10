@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import MusicPanel from "../../components/MusicLab.vue";
 import MiniPlayer from "../../components/MiniPlayer.vue";
+import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);
 const musicLab = ref<InstanceType<typeof MusicPanel> | null>(null);
@@ -554,6 +555,7 @@ async function saveReceipt() {
         <text class="canteen-top-icon">♫</text>
         <view class="canteen-top-info"><text class="canteen-top-title">{{ canteenPlayback.track.name }}</text><text class="canteen-top-artist">{{ canteenPlayback.track.artist }} · {{ canteenPlayback.mode }}</text></view>
       </button>
+      <NowPlayingLyrics class="canteen-top-lyrics" :text="canteenPlayback.lyric.text" :secondary="canteenPlayback.lyric.secondary" :line-key="canteenPlayback.lyric.key" :playing="canteenPlayback.playing" />
       <text class="canteen-top-time">{{ canteenPlayback.time }}</text>
       <view class="canteen-top-controls">
         <button :disabled="!canteenPlayback.canPrevious" @click="musicLab?.previous()" aria-label="上一首">⏮</button>
@@ -2475,7 +2477,8 @@ async function saveReceipt() {
 
 <style scoped>
 .canteen-top-player { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 16px 0 0; padding: 12px 18px 9px; border: 1px solid #d5c7df; border-radius: 10px; background: #f0e9f6; box-shadow: 0 4px 18px #65517616; }
-.canteen-top-song { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; margin: 0; padding: 0; text-align: left; background: transparent; border: 0; }
+.canteen-top-song { display: flex; align-items: center; gap: 12px; flex: 0 1 28%; max-width: 320px; min-width: 0; margin: 0; padding: 0; text-align: left; background: transparent; border: 0; }
+.canteen-top-lyrics { flex: 1 1 25%; min-width: 0; }
 .canteen-top-icon { color: #9271a8; font-size: 27px; }
 .canteen-top-info { flex: 1; min-width: 0; }
 .canteen-top-title { display: block; font-size: 14px; font-weight: 600; color: #6e5285; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2488,5 +2491,5 @@ async function saveReceipt() {
 .canteen-top-controls .canteen-top-close { color: #b5a3be; font-size: 20px; }
 .canteen-top-song::after, .canteen-top-controls button::after { border: 0; }
 .canteen-top-status { flex-basis: 100%; color: #a795b2; font-size: 10px; }
-@media (max-width: 760px) { .canteen-top-player { padding: 10px 10px 8px; gap: 8px; } .canteen-top-time { display: none; } .canteen-top-controls { gap: 2px; } .canteen-top-controls button { padding: 6px; } .canteen-top-title { font-size: 12px; } }
+@media (max-width: 760px) { .canteen-top-player { padding: 10px 10px 8px; gap: 8px; } .canteen-top-time { display: none; } .canteen-top-song { flex: 1; max-width: none; } .canteen-top-lyrics { order: 4; flex: 1 0 100%; } .canteen-top-status { order: 5; } .canteen-top-controls { gap: 2px; } .canteen-top-controls button { padding: 6px; } .canteen-top-title { font-size: 12px; } }
 </style>

@@ -293,6 +293,15 @@ function stop() {
   playback.value = "";
   resolving.value = false;
 }
+const topLyric = computed(() => {
+  const currentLine = lyrics.value.lines[activeLine.value];
+  const text = currentLine?.text || lyricStatus.value || (lyrics.value.lines.length ? "前奏中，歌词马上就来…" : lyrics.value.plain.length ? "本曲歌词未提供时间轴" : "让旋律替你发言。" );
+  return {
+    text,
+    secondary: currentLine?.translation || (currentLine ? lyrics.value.lines[activeLine.value + 1]?.text || "" : ""),
+    key: (selected.value ? trackKey(selected.value) : "") + ":" + activeLine.value + ":" + text,
+  };
+});
 const playbackState = computed(() => ({
   track: selected.value || null,
   playing: isPlaying.value,
@@ -302,6 +311,7 @@ const playbackState = computed(() => ({
   time: duration(elapsed.value) + " / " + duration(total.value),
   mode: modeLabel.value,
   message: playback.value,
+  lyric: topLyric.value,
 }));
 defineExpose({ playbackState, togglePlayback, previous: () => step(-1), next: () => step(1), stop });
 onBeforeUnmount(() => { disposed = true; generation++; stop(); });
