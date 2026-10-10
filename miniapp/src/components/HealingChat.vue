@@ -153,7 +153,7 @@ defineExpose({stop});
           <view class="role-grid"><button v-for="role in roles" :key="role.code" :class="{ picked: roleCode === role.code }" @click="roleCode = role.code"><text class="role-code">{{ role.code }}</text><text>{{ role.name }}</text></button></view>
           <text class="role-description">{{ pickedRole?.style }}</text>
           <text class="field-label">怎么称呼 TA（可选）</text><input v-model="roleName" maxlength="40" :placeholder="pickedRole?.name || '给角色起个名字'" class="chat-input" />
-          <text class="field-label">你希望 TA 怎么聊天（可选）</text><textarea v-model="roleStyle" maxlength="500" placeholder="例如：温柔一点、可以接梗，别总给我讲大道理。" class="style-input" />
+          <text class="field-label">角色背景和聊天偏好（可选）</text><textarea v-model="roleStyle" maxlength="500" placeholder="例如：喜欢电影和散步，语气温柔但有主见，可以接梗，不要一上来就讲道理。" class="style-input" />
           <button class="primary" :disabled="creating || !enabled || !ready" @click="createConversation">{{ creating ? '正在给你们留座…' : '就和 TA 聊聊 →' }}</button>
         </view>
         <template v-else-if="active">

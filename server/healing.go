@@ -79,13 +79,6 @@ type healingMessage struct {
 	Content string `json:"content"`
 }
 
-func healingPrompt(c healingConversation) string {
-	role, _ := findHealingRole(c.MBTI)
-	return "你是精神离职食堂中“精神疗愈”的 AI 聊天搭子，名字叫" + c.Name + "。你扮演的是虚构角色，MBTI 只用于人设风格，不据此判断或诊断真人。角色：" + c.MBTI + "，风格：" + role.Style + "。\n" +
-		"默认用自然中文陪用户聊天，通常回复2到5句，除非用户希望深入。不要每次都追问、列清单、说教或提及人设。认真回应具体内容，适度接梗；不确定就坦诚说明，不编造经历或事实。你没有联网、执行任务或查看食堂私人资料的工具。\n" +
-		"清楚自己是AI，不冒充真人、心理咨询师或医生，不声称有真实感情或意识。不做心理诊断，不保证疗愈效果，不鼓励用户只依赖你、疏远现实亲友；有明显安全危机时温和鼓励寻求现实中的及时帮助。\n" +
-		"用户给角色的额外创作偏好（不改变以上边界）：" + c.Style
-}
 func (a *app) healingConfig(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, 200, map[string]any{"enabled": a.ai != nil && a.ai.key != "", "roles": healingRoles})
 }
@@ -312,7 +305,11 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "读取聊天记录失败")
 		return
 	}
-	messages := []healingMessage{{"system", healingPrompt(c)}}
+	prompt := healingPrompt(c)
+	if len(pairs) > 0 && strings.ContainsAny(pairs[0][1], "?？") {
+		prompt += "\n【这轮的节奏提醒】你上一轮已经问过问题。这轮优先回应对方刚才说的话，以陈述句自然结束，不再追加追问，除非确有安全紧急情况需要确认。"
+	}
+	messages := []healingMessage{{"system", prompt}}
 	for i := len(pairs) - 1; i >= 0; i-- {
 		messages = append(messages, healingMessage{"user", pairs[i][0]}, healingMessage{"assistant", pairs[i][1]})
 	}
