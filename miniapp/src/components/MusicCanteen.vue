@@ -1,26 +1,47 @@
+<script setup lang="ts">
+import { ref } from "vue";
+const frameKey = ref(0);
+</script>
+
 <template>
-  <view class="canteen-empty">
-    <text class="canteen-icon">♫</text>
-    <text class="canteen-title">音乐食堂 · 音源待定</text>
-    <text class="canteen-copy">耳朵先下班，好音乐慢慢找。</text>
-    <text class="canteen-note">暂未接入音源，可切换至网易云或酷狗使用已绑定的账号。</text>
+  <view class="canteen">
+    <view class="canteen-heading">
+      <view>
+        <text class="canteen-title">音乐食堂</text>
+        <text class="canteen-note">米兔音乐 · 搜首歌，让耳朵先下班。</text>
+      </view>
+      <!-- #ifdef H5 -->
+      <button class="reload" @click="frameKey++">重新加载</button>
+      <!-- #endif -->
+    </view>
+    <!-- #ifdef H5 -->
+    <iframe
+      :key="frameKey"
+      class="music-frame"
+      src="https://www.qqmp3.vip/"
+      title="音乐食堂 · 米兔音乐播放器"
+      sandbox="allow-scripts allow-same-origin allow-forms"
+      allow="autoplay"
+      referrerpolicy="no-referrer"
+    ></iframe>
+    <text class="canteen-note footer">搜索与播放由米兔音乐提供；离开音乐食堂会停止播放。页面空白时可重新加载。</text>
+    <!-- #endif -->
+    <!-- #ifndef H5 -->
+    <text class="canteen-note">音乐食堂目前支持网页试玩版，请在浏览器打开食堂使用。</text>
+    <!-- #endif -->
   </view>
 </template>
 
 <style scoped>
-.canteen-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 48px 20px;
-  text-align: center;
-  border: 1px solid #ded7e6;
-  border-radius: 12px;
-  background: #faf9f2;
+.canteen { overflow: hidden; border: 1px solid #ded7e6; border-radius: 12px; background: #faf9f2; }
+.canteen-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px; }
+.canteen-title { display: block; margin-bottom: 6px; font-size: 18px; font-weight: 600; color: #745693; }
+.canteen-note { display: block; font-size: 12px; line-height: 1.8; color: #7e826e; }
+.reload { flex-shrink: 0; margin: 0; padding: 8px 12px; border: 1px solid #d9cce6; border-radius: 6px; background: #eee6f4; color: #745693; font-size: 12px; cursor: pointer; }
+.music-frame { display: block; width: 100%; height: 76vh; min-height: 560px; max-height: 900px; border: 0; background: #181824; }
+.footer { padding: 12px 18px; }
+@media (max-width: 760px) {
+  .canteen-heading { padding: 14px; }
+  .music-frame { height: 72vh; min-height: 480px; }
 }
-.canteen-icon { font-size: 36px; color: #9471b0; }
-.canteen-title { font-size: 18px; font-weight: 600; color: #745693; }
-.canteen-copy { font-size: 14px; color: #7e826e; }
-.canteen-note { font-size: 12px; line-height: 1.8; color: #929681; }
 </style>
