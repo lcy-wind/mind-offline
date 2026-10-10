@@ -537,7 +537,10 @@ async function saveReceipt() {
           ></view
         ></template
       >
-      <text v-if="authError || error" class="auth-error">{{
+      <!-- #ifdef MP-WEIXIN -->
+      <text class="connection-version">微信体验版 · 网络诊断 0.1.3</text>
+      <!-- #endif -->
+      <text v-if="authError || error" class="auth-error" :selectable="true">{{
         authError || error
       }}</text>
       <button
@@ -1093,7 +1096,10 @@ async function saveReceipt() {
 .auth-card .primary {
   margin-top: 25px;
 }
+.connection-version { display: block; margin-top: 14px; color: #8d8c7b; font-size: 10px; }
 .auth-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   display: block;
   font-size: 12px;
   color: #a15136;

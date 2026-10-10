@@ -51,6 +51,17 @@ export class ApiError extends Error {
     super(message);
   }
 }
+export function networkFailureMessage(errMsg = "") {
+  const detail = errMsg.replace(/https?:\/\/[^\s"'<>]+/g, url => url.replace(/(https?:\/\/[^/?#]+).*/, "$1"))
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [已隐藏]").replace(/[\r\n]+/g, " ").slice(0, 220);
+  let code = "NETWORK", hint = "未能连接食堂服务器，请换用手机流量或稍后重试。";
+  if (/domain list|url.*合法|域名.*合法/i.test(errMsg)) { code = "DOMAIN"; hint = "微信未允许访问食堂服务器，请联系管理员更新服务器域名配置。"; }
+  else if (/timeout|timed out/i.test(errMsg)) { code = "TIMEOUT"; hint = "连接食堂服务器超时，请换个网络重试。"; }
+  else if (/ssl|tls|certificate|cert_/i.test(errMsg)) { code = "TLS"; hint = "与食堂服务器的安全连接失败，请确认手机时间正确并联系管理员。"; }
+  else if (/dns|resolve|name_not_resolved/i.test(errMsg)) { code = "DNS"; hint = "手机暂时无法解析食堂域名，请换个网络重试。"; }
+  return `连接失败（NET-${code}）。${hint}${detail ? "\n网络提示：" + detail : ""}`;
+}
+
 export function request<T>(
   path: string,
   method: "GET" | "POST" = "GET",
@@ -81,7 +92,7 @@ export function request<T>(
             ),
           );
       },
-      fail: () => reject(new Error("信号也精神离职了，请检查网络后重试")),
+      fail: (result) => reject(new Error(networkFailureMessage(result.errMsg))),
     }),
   );
 }

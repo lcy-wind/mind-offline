@@ -18,3 +18,11 @@ test('a request pending at logout cannot restore private state',async()=>{
 test('expired session is returned as an authentication error',async()=>{
  stored='expired-session';const result=request('/me');pending.success({statusCode:401,data:{error:'请登录后继续'}});await assert.rejects(result,e=>e instanceof ApiError&&e.status===401);
 });
+
+test('network failures distinguish WeChat domain rejection, TLS, DNS and timeout without credentials',async()=>{
+ for(const [errMsg,code] of [['request:fail url not in domain list','DOMAIN'],['request:fail ssl hand shake error','TLS'],['request:fail ERR_NAME_NOT_RESOLVED','DNS'],['request:fail timeout','TIMEOUT'],['request:fail interrupted','NETWORK']]){
+  const run=request('/auth/login','POST',{password:'not-to-be-displayed'});pending.fail({errMsg});await assert.rejects(run,e=>e.message.includes('NET-'+code)&&!e.message.includes('not-to-be-displayed'));
+ }
+ const run=request('/auth/login');pending.fail({errMsg:'request:fail https://example.com/path?token=secret Bearer session-secret'});
+ await assert.rejects(run,e=>!e.message.includes('secret')&&!e.message.includes('?token'));
+});
