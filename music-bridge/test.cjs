@@ -47,6 +47,8 @@ test("private adapter authenticates and exposes only approved routes", async () 
       "/logout",
       "/admin",
       "/user/playlist",
+      "/kugou/login/cellphone",
+      "/kugou/song/url",
     ]) {
       const res = await fetch(endpoint + path, {
         method: "POST",
@@ -99,4 +101,60 @@ test("playback distinguishes full, trial and unavailable without substituting au
     }).status,
     "unavailable",
   );
+});
+const { normalizeList, normalizeSong, normalizeAudio } = require("./kugou.cjs");
+test("KuGou mappings whitelist account data and reject uncertain preview audio", () => {
+  const l = normalizeList(
+    {
+      listid: 3,
+      listname: "我的歌单",
+      pic: "http://imge.kugou.com/{size}/test.jpg",
+      count: 2,
+      list_create_userid: 123,
+      token: "never-expose",
+    },
+    "123",
+  );
+  assert.equal(l.id, "3");
+  assert.equal(l.created, true);
+  assert.equal(l.cover, "https://imge.kugou.com/240/test.jpg");
+  assert.equal(l.token, undefined);
+  const s = normalizeSong({
+    hash: "a".repeat(32),
+    filename: "歌手 - 歌名",
+    album_id: 1,
+    album_audio_id: 2,
+    timelength: 90000,
+  });
+  assert.equal(s.id, "A".repeat(32) + "_1_2");
+  assert.equal(s.duration, 90);
+  assert.equal(s.name, "歌名");
+  assert.equal(s.artist, "歌手");
+  assert.equal(normalizeSong({ hash: "bad" }), null);
+  assert.equal(
+    normalizeAudio({
+      status: 1,
+      url: ["https://fs.open.kugou.com/test.mp3"],
+      is_free_part: 0,
+    }).status,
+    "playable",
+  );
+  assert.equal(
+    normalizeAudio({
+      status: 1,
+      url: ["https://fs.open.kugou.com/test.mp3"],
+      is_free_part: "0",
+      free_part_info: { start: 0, end: 0 },
+    }).status,
+    "playable",
+  );
+  assert.equal(
+    normalizeAudio({
+      status: 1,
+      url: ["https://fs.open.kugou.com/test.mp3"],
+      is_free_part: 1,
+    }).status,
+    "unavailable",
+  );
+  assert.equal(normalizeAudio({ status: 1, url: [] }).status, "unavailable");
 });

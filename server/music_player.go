@@ -21,9 +21,9 @@ func (a *app) boundMusic(w http.ResponseWriter, r *http.Request) (*boundMusic, b
 	}
 	b := &boundMusic{owner: r.Context().Value(guestKey).(string)}
 	var expired bool
-	e := a.db.QueryRow(r.Context(), "SELECT cookie_cipher,music_uid,expired FROM music_bindings WHERE account_id=$1", b.owner).Scan(&b.encrypted, &b.uid, &expired)
+	e := a.db.QueryRow(r.Context(), "SELECT cookie_cipher,music_uid,expired FROM "+musicBindingTable(r)+" WHERE account_id=$1", b.owner).Scan(&b.encrypted, &b.uid, &expired)
 	if errors.Is(e, pgx.ErrNoRows) {
-		fail(w, 409, "请先绑定网易云账号")
+		fail(w, 409, "请先绑定音乐平台账号")
 		return nil, false
 	}
 	if e != nil {
@@ -31,10 +31,10 @@ func (a *app) boundMusic(w http.ResponseWriter, r *http.Request) (*boundMusic, b
 		return nil, false
 	}
 	if expired || len(b.encrypted) == 0 {
-		fail(w, 409, "网易云登录已失效，请重新扫码")
+		fail(w, 409, "音乐平台登录已失效，请重新扫码")
 		return nil, false
 	}
-	b.cookie, e = a.music.open(b.encrypted, b.owner+":binding")
+	b.cookie, e = a.music.open(b.encrypted, musicAAD(r, b.owner, "binding"))
 	if e != nil {
 		a.musicError(w)
 		return nil, false
@@ -43,8 +43,8 @@ func (a *app) boundMusic(w http.ResponseWriter, r *http.Request) (*boundMusic, b
 }
 func (a *app) checkMusicReply(w http.ResponseWriter, r *http.Request, b *boundMusic, e error, uid string) bool {
 	if errors.Is(e, errMusicExpired) || (e == nil && uid != b.uid) {
-		_, _ = a.db.Exec(r.Context(), "UPDATE music_bindings SET expired=true,cookie_cipher=NULL WHERE account_id=$1 AND cookie_cipher=$2", b.owner, b.encrypted)
-		fail(w, 409, "网易云登录已失效，请重新扫码")
+		_, _ = a.db.Exec(r.Context(), "UPDATE "+musicBindingTable(r)+" SET expired=true,cookie_cipher=NULL WHERE account_id=$1 AND cookie_cipher=$2", b.owner, b.encrypted)
+		fail(w, 409, "音乐平台登录已失效，请重新扫码")
 		return false
 	}
 	if e != nil {
@@ -52,7 +52,7 @@ func (a *app) checkMusicReply(w http.ResponseWriter, r *http.Request, b *boundMu
 		return false
 	}
 	var bound, session bool
-	e = a.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM music_bindings WHERE account_id=$1 AND cookie_cipher=$2 AND NOT expired),EXISTS(SELECT 1 FROM customer_sessions s JOIN accounts a ON a.id=s.account_id WHERE s.account_id=$1 AND s.token_hash=$3 AND s.expires_at>now() AND NOT a.disabled)`, b.owner, b.encrypted, hash(bearer(r))).Scan(&bound, &session)
+	e = a.db.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM "+musicBindingTable(r)+" WHERE account_id=$1 AND cookie_cipher=$2 AND NOT expired),EXISTS(SELECT 1 FROM customer_sessions s JOIN accounts a ON a.id=s.account_id WHERE s.account_id=$1 AND s.token_hash=$3 AND s.expires_at>now() AND NOT a.disabled)", b.owner, b.encrypted, hash(bearer(r))).Scan(&bound, &session)
 	if e != nil {
 		a.internal(w, e)
 		return false
@@ -85,7 +85,7 @@ func (a *app) musicTracks(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		offset, e = strconv.Atoi(v)
 	}
-	if !validMusicID(id) || e != nil || offset < 0 || offset > 20000 {
+	if !validMusicResource(musicProvider(r), "playlist", id) || e != nil || offset < 0 || offset > 20000 {
 		fail(w, 400, "歌单编号或页码不正确")
 		return
 	}
@@ -93,7 +93,7 @@ func (a *app) musicTracks(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !a.limits.allow("music-tracks:"+b.owner, 20) {
+	if !a.limits.allow("music-tracks:"+musicProvider(r)+":"+b.owner, 20) {
 		fail(w, 429, "歌曲列表刷新过于频繁，请稍后重试")
 		return
 	}
@@ -116,10 +116,10 @@ func (a *app) musicTracks(w http.ResponseWriter, r *http.Request) {
 	}
 	items := []musicTrack{}
 	for _, t := range result.Items {
-		if !validMusicID(t.ID) {
+		if !validMusicResource(musicProvider(r), "track", t.ID) {
 			continue
 		}
-		t.Cover = safeMusicImage(t.Cover)
+		t.Cover = safeProviderImage(musicProvider(r), t.Cover)
 		items = append(items, t)
 	}
 	result.Items = items
@@ -155,7 +155,7 @@ func (a *app) musicPlayback(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if !validMusicID(in.ID) {
+	if !validMusicResource(musicProvider(r), "track", in.ID) {
 		fail(w, 400, "歌曲编号不正确")
 		return
 	}
@@ -163,7 +163,7 @@ func (a *app) musicPlayback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !a.limits.allow("music-play:"+b.owner, 30) {
+	if !a.limits.allow("music-play:"+musicProvider(r)+":"+b.owner, 30) {
 		fail(w, 429, "切歌过于频繁，请稍后重试")
 		return
 	}
@@ -176,7 +176,7 @@ func (a *app) musicPlayback(w http.ResponseWriter, r *http.Request) {
 		a.musicError(w)
 		return
 	}
-	out.URL = safeAudioURL(out.URL)
+	out.URL = safeProviderAudio(musicProvider(r), out.URL)
 	if out.Status != "playable" && out.Status != "trial" {
 		out.Status = "unavailable"
 		out.URL = ""

@@ -3,7 +3,10 @@ import { player, playerState as p, formatTime } from "../lib/player";
 const emit = defineEmits<{ (e: "open"): void }>();
 function external() {
   if (!p.track) return;
-  const url = "https://music.163.com/#/song?id=" + p.track.id;
+  const url =
+    p.provider === "kugou"
+      ? "https://www.kugou.com/song/#hash=" + p.track.id.split("_")[0]
+      : "https://music.163.com/#/song?id=" + p.track.id;
   // #ifdef H5
   window.open(url, "_blank", "noopener,noreferrer");
   // #endif
@@ -25,7 +28,10 @@ function external() {
         ><view class="player-title"
           >{{ p.track.name
           }}<text v-if="p.trial" class="trial-tag">试听</text></view
-        ><text class="player-artist">{{ p.track.artist }}</text></view
+        ><text class="player-artist"
+          >{{ p.provider === "kugou" ? "酷狗" : "网易云" }} ·
+          {{ p.track.artist }}</text
+        ></view
       ><view class="player-controls"
         ><button
           :disabled="p.index <= 0"
@@ -76,7 +82,7 @@ function external() {
         v-if="['error', 'unavailable'].includes(p.status)"
         @click="external"
       >
-        去网易云 ↗
+        {{ p.provider === "kugou" ? "去酷狗" : "去网易云" }} ↗
       </button></view
     ></view
   >

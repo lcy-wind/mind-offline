@@ -88,3 +88,20 @@ func TestSafeAudioURL(t *testing.T) {
 		t.Fatal("valid HTTPS conversion")
 	}
 }
+
+func TestProviderValidation(t *testing.T) {
+	if !validMusicResource("kugou", "track", strings.Repeat("A", 32)+"_1_2") || validMusicResource("netease", "track", strings.Repeat("A", 32)) {
+		t.Fatal("provider track ID separation")
+	}
+	if safeProviderAudio("kugou", "https://m7.music.126.net/test.mp3") != "" || safeProviderAudio("netease", "https://fs.open.kugou.com/test.mp3") != "" {
+		t.Fatal("cross-provider CDN accepted")
+	}
+	if safeProviderAudio("kugou", "http://fs.open.kugou.com/test.mp3") != "https://fs.open.kugou.com/test.mp3" {
+		t.Fatal("valid Kugou CDN")
+	}
+	m := testMusicClient(t, "http://127.0.0.1:18085")
+	data, _ := m.seal([]byte("fake-credential"), "owner:binding")
+	if _, e := m.open(data, "owner:kugou:binding"); e == nil {
+		t.Fatal("cross-provider credential decrypted")
+	}
+}

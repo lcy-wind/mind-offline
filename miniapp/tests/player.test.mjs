@@ -11,3 +11,11 @@ test('trial seeks stay within allowed segment and stop at end',async()=>{const x
 test('already clipped preview starts at zero and browser gesture retry reuses source',async()=>{const x=setup(async id=>({...full(id),status:'trial',trial_start:60,trial_end:90}));await x.player.select(tracks[0],[tracks[0]],'123');const d=x.drivers[0];d.events.meta(30);x.player.seek(10);assert.equal(d.seeks.at(-1),10);d.play=async()=>{throw Error('NotAllowedError')};x.player.pause();x.player.toggle();await new Promise(r=>setImmediate(r));assert.equal(x.state.status,'blocked');d.play=async()=>d.events.play();x.player.toggle();await new Promise(r=>setImmediate(r));assert.equal(x.state.status,'playing');assert.equal(x.drivers.length,1)});
 test('unavailable tracks do not load or substitute audio',async()=>{const x=setup(async()=>({status:'unavailable',message:'权限不足',url:''}));await x.player.select(tracks[0],tracks,'123');assert.equal(x.state.status,'unavailable');assert.equal(x.drivers.length,0)});
 test('normal end advances to next track; paused audio resumes without another URL request',async()=>{let calls=0;const x=setup(async id=>{calls++;return full(id)});await x.player.select(tracks[0],tracks,'123');x.player.pause();x.player.toggle();await new Promise(r=>setImmediate(r));assert.equal(calls,1);x.drivers[0].events.ended();await new Promise(r=>setImmediate(r));assert.equal(x.state.track.id,'2');assert.equal(calls,2)});
+test('KuGou automatic next and retry retain provider; another platform cannot replace the queue',async()=>{
+ let session='same-session';const state=emptyPlayerState(),calls=[],drivers=[];
+ const p=createPlayer(state,async(id,provider)=>{calls.push(provider);return full(id)},e=>{const d={load(){},async play(){e.play()},pause(){e.pause()},seek(){},destroy(){},events:e};drivers.push(d);return d},()=>session);
+ p.setOwner('same-account');await p.select(tracks[0],tracks,'123','kugou');assert.equal(state.provider,'kugou');
+ p.extendQueue('123',[tracks[0]],'netease');assert.equal(state.queue.length,2);
+ drivers[0].events.ended();await new Promise(r=>setImmediate(r));assert.deepEqual(calls,['kugou','kugou']);assert.equal(state.track.id,'2');
+ p.reset();await p.select(tracks[0],tracks,'123','netease');assert.equal(calls.at(-1),'netease');assert.equal(state.provider,'netease');
+});

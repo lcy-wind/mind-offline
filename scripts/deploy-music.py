@@ -9,7 +9,7 @@ scp=['scp']+(['-o','ControlPath='+control] if Path(control).exists() else [])
 tag='mind-offline-music:'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')
 release='/opt/mind-offline/music/releases/'+tag.split(':')[1]
 subprocess.run(ssh+['test -s /opt/mind-offline/music/music.env && install -d -m 700 '+shlex.quote(release)],check=True)
-files=['Dockerfile','package.json','package-lock.json','server.cjs','playback.cjs']
+files=['Dockerfile','package.json','package-lock.json','server.cjs','playback.cjs','kugou.cjs']
 subprocess.run(scp+[str(root/'music-bridge'/f) for f in files]+[host+':'+release+'/'],check=True)
 subprocess.run(scp+[str(root/'deploy/music-compose.yaml'),host+':/opt/mind-offline/music/compose.yaml'],check=True)
 command='''set -eu

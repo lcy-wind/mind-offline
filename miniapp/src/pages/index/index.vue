@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
-import MusicPanel from "../../components/MusicPanel.vue";
+import MusicPanel from "../../components/MusicLab.vue";
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);

@@ -6,6 +6,7 @@ import {
   playerState,
   formatTime,
   type MusicTrack,
+  type MusicProvider,
 } from "../lib/player";
 const selectedPlaylist = ref<Playlist | null>(null),
   tracks = ref<MusicTrack[]>([]),
@@ -38,7 +39,8 @@ async function loadTracks(append = false) {
       offset: number;
       more: boolean;
     }>(
-      "/music/netease/tracks?playlist_id=" +
+      base +
+        "/tracks?playlist_id=" +
         p.id +
         "&offset=" +
         (append ? trackOffset : 0),
@@ -48,7 +50,7 @@ async function loadTracks(append = false) {
     tracksTotal.value = result.total;
     tracksMore.value = result.more;
     trackOffset = result.offset + 30;
-    player.extendQueue(p.id, tracks.value);
+    player.extendQueue(p.id, tracks.value, provider);
     error.value = "";
   } catch (e) {
     handleError(e);
@@ -58,9 +60,19 @@ async function loadTracks(append = false) {
 }
 function playTrack(t: MusicTrack) {
   if (selectedPlaylist.value)
-    void player.select(t, tracks.value, selectedPlaylist.value.id);
+    void player.select(t, tracks.value, selectedPlaylist.value.id, provider);
 }
-const props = defineProps<{ accountId: string; foreground: boolean }>();
+const props = defineProps<{
+  accountId: string;
+  foreground: boolean;
+  provider?: MusicProvider;
+}>();
+const provider = props.provider || "netease";
+const platformName = provider === "kugou" ? "酷狗音乐" : "网易云音乐";
+const base = "/music/" + provider;
+function stopProvider() {
+  if (playerState.provider === provider) player.reset();
+}
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 type Binding = {
   enabled: boolean;
@@ -104,8 +116,8 @@ const remaining = computed(() =>
     : 0,
 );
 const captions: Record<string, string> = {
-  waiting: "打开网易云音乐 App，扫一扫",
-  confirming: "扫码成功，请在网易云 App 中确认登录",
+  waiting: "打开" + platformName + " App，扫一扫",
+  confirming: "扫码成功，请在" + platformName + " App 中确认登录",
   expired: "二维码已过期，请重新获取",
   bound: "绑定成功，正在读取你的歌单",
 };
@@ -131,10 +143,10 @@ async function retryStatus() {
 }
 async function loadStatus() {
   try {
-    const data = await request<Binding>("/music/netease");
+    const data = await request<Binding>(base);
     if (alive) {
       binding.value = data;
-      if (!data.bound || data.expired) player.reset();
+      if (!data.bound || data.expired) stopProvider();
     }
   } catch (e) {
     handleError(e);
@@ -151,7 +163,7 @@ async function loadPlaylists(newOffset = 0) {
       items: Playlist[];
       more: boolean;
       offset: number;
-    }>("/music/netease/playlists?offset=" + newOffset);
+    }>(base + "/playlists?offset=" + newOffset);
     if (!alive || rev !== revision) return;
     playlists.value = data.items;
     more.value = data.more;
@@ -179,9 +191,9 @@ async function begin() {
       attempt_id: string;
       image: string;
       expires_at: string;
-    }>("/music/netease/qr", "POST");
+    }>(base + "/qr", "POST");
     if (!alive || rev !== revision) {
-      request("/music/netease/qr/cancel", "POST", {
+      request(base + "/qr/cancel", "POST", {
         attempt_id: data.attempt_id,
       }).catch(() => {});
       return;
@@ -210,7 +222,7 @@ async function poll() {
   polling.value = true;
   try {
     const result = await request<{ status: string }>(
-      "/music/netease/qr/check",
+      base + "/qr/check",
       "POST",
       { attempt_id: id },
     );
@@ -218,7 +230,7 @@ async function poll() {
     qrState.value = result.status;
     error.value = "";
     if (result.status === "bound") {
-      player.reset();
+      stopProvider();
       qr.value = null;
       await loadStatus();
       await loadPlaylists();
@@ -242,7 +254,7 @@ async function cancel() {
   qr.value = null;
   error.value = "";
   try {
-    await request("/music/netease/qr/cancel", "POST", { attempt_id: id });
+    await request(base + "/qr/cancel", "POST", { attempt_id: id });
   } catch (e) {
     handleError(e);
   }
@@ -251,8 +263,9 @@ async function unbind() {
   if (busy.value) return;
   const confirmation = await new Promise<boolean>((resolve) =>
     uni.showModal({
-      title: "解除网易云绑定？",
-      content: "将删除本站保存的网易云登录凭证，不会修改你的网易云歌单。",
+      title: "解除" + platformName + "绑定？",
+      content:
+        "将删除本站保存的" + platformName + "登录凭证，不会修改你的歌单。",
       confirmText: "解除绑定",
       success: (r) => resolve(Boolean(r.confirm)),
       fail: () => resolve(false),
@@ -262,10 +275,10 @@ async function unbind() {
   busy.value = true;
   ++revision;
   try {
-    await request("/music/netease/unbind", "POST");
+    await request(base + "/unbind", "POST");
     if (!alive) return;
     qr.value = null;
-    player.reset();
+    stopProvider();
     selectedPlaylist.value = null;
     tracks.value = [];
     ++trackRevision;
@@ -313,9 +326,7 @@ onUnmounted(() => {
   clearInterval(timer);
   const id = qr.value?.attempt_id;
   if (id)
-    request("/music/netease/qr/cancel", "POST", { attempt_id: id }).catch(
-      () => {},
-    );
+    request(base + "/qr/cancel", "POST", { attempt_id: id }).catch(() => {});
   ++revision;
 });
 </script>
@@ -326,7 +337,7 @@ onUnmounted(() => {
         ><text class="eyebrow">MIND OFFLINE / MUSIC LAB</text
         ><view class="music-title">耳机一戴，<br /><text>工位之外。</text></view
         ><text class="music-subtitle"
-          >把你的网易云歌单，带进精神离职食堂。</text
+          >把你的{{ platformName }}歌单，带进精神离职食堂。</text
         ></view
       ><view class="record"><view class="record-center">♫</view></view
       ><text class="music-beta">实验接入 · BETA</text></view
@@ -359,7 +370,7 @@ onUnmounted(() => {
           /><view v-else class="music-avatar avatar-placeholder">♫</view
           ><view class="music-person"
             ><text class="music-nickname">{{ binding.nickname }}</text
-            ><text class="muted">网易云 ID：{{ binding.uid }}</text
+            ><text class="muted">{{ platformName }} ID：{{ binding.uid }}</text
             ><text class="music-binding-label">{{
               binding.expired
                 ? "登录已失效，需要重新扫码"
@@ -369,19 +380,19 @@ onUnmounted(() => {
             解除绑定
           </button></view
         ><text v-if="binding.expired" class="music-expired"
-          >网易云登录已过期或失效，你的食堂账号不受影响。</text
+          >{{ platformName }}登录已过期或失效，你的食堂账号不受影响。</text
         ></view
       >
       <view
         v-if="!binding.bound || binding.expired || qr"
         class="music-card music-connect"
         ><view
-          ><text class="eyebrow">CONNECT YOUR NETEASE ACCOUNT</text
+          ><text class="eyebrow">CONNECT YOUR MUSIC ACCOUNT</text
           ><view class="section-title">{{
             binding.expired ? "让音乐重新上线。" : "扫码，带上你的歌单。"
           }}</view
           ><text class="muted"
-            >建议在电脑上打开本页，用手机网易云音乐 App 扫码。</text
+            >建议在电脑上打开本页，用手机{{ platformName }} App 扫码。</text
           ></view
         >
         <view v-if="!qr" class="music-consent"
@@ -393,14 +404,18 @@ onUnmounted(() => {
                 :checked="consent"
                 color="#6550a0"
               /><text
-                >我同意通过第三方实验接口登录网易云，并由本站加密保存登录凭证，用于读取我的账号资料和歌单。</text
+                >我同意通过第三方实验接口登录{{
+                  platformName
+                }}，并由本站加密保存登录凭证，用于读取我的账号资料和歌单。</text
               ></label
             ></checkbox-group
           ><text class="music-disclosure"
-            >这是扫码登录，不是网易云官方 OAuth
-            授权。无需在本站输入网易云密码；绑定可以随时解除。</text
+            >这是扫码登录，不是{{ platformName }}官方 OAuth
+            授权。无需在本站输入{{ platformName }}密码；绑定可以随时解除。</text
           ><button class="primary" :disabled="!consent || busy" @click="begin">
-            {{ busy ? "正在生成二维码…" : "生成网易云登录二维码 →" }}
+            {{
+              busy ? "正在生成二维码…" : "生成" + platformName + "登录二维码 →"
+            }}
           </button></view
         >
         <view v-else class="qr-layout"
@@ -435,7 +450,9 @@ onUnmounted(() => {
                 重试查询</button
               ><button class="outline" @click="cancel">取消绑定</button></view
             ><text class="music-disclosure"
-              >如果网易云提示设备环境异常，请停止本次尝试，稍后再试。本实验不会绕过平台验证。</text
+              >如果{{
+                platformName
+              }}提示设备环境异常，请停止本次尝试，稍后再试。本实验不会绕过平台验证。</text
             ></view
           ></view
         ></view
@@ -453,7 +470,9 @@ onUnmounted(() => {
             {{ playlistLoading ? "读取中…" : "↻ 刷新歌单" }}
           </button></view
         ><text class="music-disclosure"
-          >点开歌单即可在食堂听歌；有试听限制会标注，无法播放时可前往网易云。</text
+          >点开歌单即可在食堂听歌；有试听限制会标注，无法播放时可前往{{
+            platformName
+          }}。</text
         ><view v-if="!playlists.length" class="music-empty">{{
           playlistLoading
             ? "正在读取你的歌单…"
@@ -475,7 +494,7 @@ onUnmounted(() => {
               ><button class="playlist-listen" @click="openTracks(p)">
                 打开歌曲列表 →</button
               ><button class="playlist-link" @click="openPlaylist(p)">
-                前往网易云 ↗
+                前往{{ platformName }} ↗
               </button></view
             ></view
           ></view
@@ -518,15 +537,21 @@ onUnmounted(() => {
         ><view v-if="!tracks.length" class="music-empty">{{
           tracksLoading
             ? "正在读取歌曲…"
-            : "暂无可读取的歌曲，可重试或前往网易云。"
+            : "暂无可读取的歌曲，可重试或前往" + platformName + "。"
         }}</view
         ><view
           v-for="(t, i) in tracks"
           :key="t.id"
           class="track-row"
-          :class="{ current: playerState.track?.id === t.id }"
+          :class="{
+            current:
+              playerState.provider === provider &&
+              playerState.track?.id === t.id,
+          }"
           ><text class="track-number">{{
-            playerState.track?.id === t.id && playerState.status === "playing"
+            playerState.provider === provider &&
+            playerState.track?.id === t.id &&
+            playerState.status === "playing"
               ? "♫"
               : String(i + 1).padStart(2, "0")
           }}</text
@@ -538,7 +563,12 @@ onUnmounted(() => {
           /><view class="track-copy"
             ><text class="track-name">{{ t.name }}</text
             ><text class="muted">{{ t.artist }} · {{ t.album }}</text
-            ><text v-if="playerState.track?.id === t.id" class="track-feedback"
+            ><text
+              v-if="
+                playerState.provider === provider &&
+                playerState.track?.id === t.id
+              "
+              class="track-feedback"
               >{{ playerState.trial ? "试听 · " : ""
               }}{{ playerState.message }}</text
             ></view
@@ -547,11 +577,16 @@ onUnmounted(() => {
             class="track-play"
             :aria-label="'播放' + t.name"
             @click="
-              playerState.track?.id === t.id ? player.toggle() : playTrack(t)
+              playerState.provider === provider &&
+              playerState.track?.id === t.id
+                ? player.toggle()
+                : playTrack(t)
             "
           >
             {{
-              playerState.track?.id === t.id && playerState.status === "playing"
+              playerState.provider === provider &&
+              playerState.track?.id === t.id &&
+              playerState.status === "playing"
                 ? "Ⅱ"
                 : "▶"
             }}

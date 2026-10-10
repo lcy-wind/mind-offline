@@ -1,3 +1,4 @@
+export type MusicProvider = "netease" | "kugou";
 export interface MusicTrack {
   id: string;
   name: string;
@@ -33,6 +34,7 @@ export interface AudioDriver {
   destroy: () => void;
 }
 export interface PlayerState {
+  provider: MusicProvider;
   track: MusicTrack | null;
   queue: MusicTrack[];
   index: number;
@@ -45,6 +47,7 @@ export interface PlayerState {
   bindingUid: string;
 }
 export const emptyPlayerState = (): PlayerState => ({
+  provider: "netease",
   track: null,
   queue: [],
   index: -1,
@@ -58,7 +61,7 @@ export const emptyPlayerState = (): PlayerState => ({
 });
 export function createPlayer(
   state: PlayerState,
-  fetchPlayback: (id: string) => Promise<Playback>,
+  fetchPlayback: (id: string, provider: MusicProvider) => Promise<Playback>,
   makeAudio: (events: AudioEvents) => AudioDriver,
   getToken: () => string,
 ) {
@@ -120,7 +123,12 @@ export function createPlayer(
     audio?.pause();
     state.status = "ended";
     if (state.index + 1 < state.queue.length)
-      void select(state.queue[state.index + 1], state.queue, state.playlistId);
+      void select(
+        state.queue[state.index + 1],
+        state.queue,
+        state.playlistId,
+        state.provider,
+      );
     else state.message = "已播放完当前队列";
   }
   async function resume() {
@@ -139,6 +147,7 @@ export function createPlayer(
     track: MusicTrack,
     queue: MusicTrack[],
     playlistId: string,
+    provider: MusicProvider = "netease",
   ) {
     if (!valid()) return;
     const rev = ++revision;
@@ -148,6 +157,7 @@ export function createPlayer(
     finished = false;
     initialSeekDone = false;
     wantPlay = true;
+    state.provider = provider;
     state.track = track;
     state.queue = [...queue];
     state.index = queue.findIndex((t) => t.id === track.id);
@@ -159,7 +169,7 @@ export function createPlayer(
     state.trial = false;
     state.bindingUid = "";
     try {
-      const data = await fetchPlayback(track.id);
+      const data = await fetchPlayback(track.id, provider);
       if (rev !== revision || !valid()) return;
       if (data.status === "unavailable" || !data.url) {
         state.status = "unavailable";
@@ -245,13 +255,19 @@ export function createPlayer(
       !["ended", "error", "unavailable"].includes(state.status)
     )
       void resume();
-    else void select(state.track, state.queue, state.playlistId);
+    else
+      void select(state.track, state.queue, state.playlistId, state.provider);
   }
   function move(delta: number) {
     if (!valid()) return;
     const index = state.index + delta;
     if (index >= 0 && index < state.queue.length)
-      void select(state.queue[index], state.queue, state.playlistId);
+      void select(
+        state.queue[index],
+        state.queue,
+        state.playlistId,
+        state.provider,
+      );
   }
   function seek(seconds: number) {
     if (!valid() || !audio || !Number.isFinite(seconds)) return;
@@ -261,8 +277,12 @@ export function createPlayer(
         Math.max(0, Math.min(seconds, Math.max(0, b.end - b.start - 0.1))),
     );
   }
-  function extendQueue(playlistId: string, tracks: MusicTrack[]) {
-    if (state.playlistId === playlistId) {
+  function extendQueue(
+    playlistId: string,
+    tracks: MusicTrack[],
+    provider: MusicProvider = "netease",
+  ) {
+    if (state.playlistId === playlistId && state.provider === provider) {
       state.queue = [...tracks];
       state.index = tracks.findIndex((t) => t.id === state.track?.id);
     }

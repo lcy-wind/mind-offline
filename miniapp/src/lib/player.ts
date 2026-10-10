@@ -7,7 +7,7 @@ import {
   type AudioEvents,
   type Playback,
 } from "./player-core";
-export type { MusicTrack } from "./player-core";
+export type { MusicTrack, MusicProvider } from "./player-core";
 export const playerState = reactive(emptyPlayerState());
 function audioDriver(events: AudioEvents): AudioDriver {
   // #ifdef H5
@@ -75,8 +75,10 @@ function audioDriver(events: AudioEvents): AudioDriver {
 }
 export const player = createPlayer(
   playerState,
-  (id) =>
-    request<Playback>("/music/netease/playback", "POST", { track_id: id }),
+  (id, provider) =>
+    request<Playback>("/music/" + provider + "/playback", "POST", {
+      track_id: id,
+    }),
   audioDriver,
   currentToken,
 );
@@ -85,14 +87,16 @@ export async function checkPlayerBinding() {
   if (!playerState.track || Date.now() - checkedAt < 15000) return;
   checkedAt = Date.now();
   const session = currentToken();
+  const provider = playerState.provider;
   try {
     const binding = await request<{
       bound: boolean;
       expired?: boolean;
       uid?: string;
-    }>("/music/netease");
+    }>("/music/" + provider);
     if (
       currentToken() === session &&
+      playerState.provider === provider &&
       (!binding.bound ||
         binding.expired ||
         (playerState.bindingUid && binding.uid !== playerState.bindingUid))

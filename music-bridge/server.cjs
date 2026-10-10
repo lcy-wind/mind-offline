@@ -23,6 +23,7 @@ const playlistDetail = require(sdk + "/module/playlist_detail");
 const songDetail = require(sdk + "/module/song_detail");
 const createOption = require(sdk + "/util/option");
 const { normalizePlayback, normalizeTrack } = require("./playback.cjs");
+const { handleKugou } = require("./kugou.cjs");
 const secret = process.env.NCM_BRIDGE_TOKEN;
 if (!secret || secret.length < 32) throw Error("NCM_BRIDGE_TOKEN is required");
 const secretHash = crypto
@@ -74,7 +75,7 @@ const server = http.createServer(async (req, res) => {
       "/playlists",
       "/tracks",
       "/playback",
-    ].includes(req.url)
+    ].includes(req.url.startsWith("/kugou/") ? req.url.slice(6) : req.url)
   ) {
     send(res, 404, { error: "not_found" });
     return;
@@ -93,6 +94,11 @@ const server = http.createServer(async (req, res) => {
       body = JSON.parse(raw);
     } catch {
       send(res, 400, { error: "invalid_json" });
+      return;
+    }
+    if (req.url.startsWith("/kugou/")) {
+      const result = await handleKugou(req.url.slice(6), body);
+      send(res, result.status, result.data);
       return;
     }
     const options = {

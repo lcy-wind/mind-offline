@@ -2,6 +2,12 @@
   "name": "mind-offline-music-bridge",
   "version": "0.1.0",
   "private": true,
-  "scripts": {"start": "node server.cjs", "test": "node --test test.cjs"},
-  "dependencies": {"@neteasecloudmusicapienhanced/api": "4.41.1"}
+  "scripts": {
+    "start": "node server.cjs",
+    "test": "node --test test.cjs"
+  },
+  "dependencies": {
+    "@neteasecloudmusicapienhanced/api": "4.41.1",
+    "kugoumusicapi": "https://codeload.github.com/MakcRe/KuGouMusicApi/tar.gz/ba3645f2c89e6b9d4fec82ff783c15287e4c5f43"
+  }
 }
