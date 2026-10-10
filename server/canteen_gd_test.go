@@ -131,3 +131,68 @@ func TestCatalogDoesNotCacheDeniedRequests(t *testing.T) {
 		t.Fatal("denied response cached")
 	}
 }
+
+func TestCatalogLyricsUseLyricIDAndCache(t *testing.T) {
+	var calls int
+	g := fakeCatalog(func(r *http.Request) (int, string) {
+		calls++
+		if r.URL.Query().Get("types") == "search" {
+			return 200, `[{"id":"123","lyric_id":"456","name":"song","artist":["artist"]}]`
+		}
+		if r.URL.Query().Get("id") != "456" {
+			t.Error("wrong lyrics resource")
+		}
+		return 200, `{"lyric":"[00:01.00]first line","tlyric":"[00:01.00]translation"}`
+	})
+	tracks, _, err := g.search(context.Background(), "netease", "song", 1)
+	if err != nil || len(tracks) != 1 || tracks[0].LyricID != "456" {
+		t.Fatalf("lyric id lost: %+v %v", tracks, err)
+	}
+	old := gdCatalog
+	gdCatalog = g
+	defer func() { gdCatalog = old }()
+	a := &app{}
+	for i := 0; i < 2; i++ {
+		r := httptest.NewRequest("GET", "/api/canteen/lyrics?source=netease&id=456", nil)
+		r = r.WithContext(context.WithValue(r.Context(), guestKey, "test-account"))
+		w := httptest.NewRecorder()
+		a.canteenLyrics(w, r)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "translation") {
+			t.Fatalf("lyrics missing: %s", w.Body)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("lyrics should be cached; calls=%d", calls)
+	}
+	for k, v := range g.cache {
+		if strings.Contains(k, "types=lyric") && time.Until(v.until) < 9*time.Minute {
+			t.Fatal("lyrics got short URL cache lifetime")
+		}
+	}
+}
+func TestCatalogLyricsFailureAndUnsupportedSource(t *testing.T) {
+	old := gdCatalog
+	defer func() { gdCatalog = old }()
+	calls := 0
+	gdCatalog = fakeCatalog(func(r *http.Request) (int, string) { calls++; return 503, `{}` })
+	a := &app{}
+	for _, tc := range []struct {
+		path   string
+		status int
+	}{
+		{"/api/canteen/lyrics?source=unknown&id=1", 400},
+		{"/api/canteen/lyrics?source=audius&id=ng9rl", 200},
+		{"/api/canteen/lyrics?source=netease&id=66842", 502},
+	} {
+		r := httptest.NewRequest("GET", tc.path, nil)
+		r = r.WithContext(context.WithValue(r.Context(), guestKey, "test-account"))
+		w := httptest.NewRecorder()
+		a.canteenLyrics(w, r)
+		if w.Code != tc.status {
+			t.Fatalf("%s got %d", tc.path, w.Code)
+		}
+	}
+	if calls != 1 {
+		t.Fatal("unsupported source triggered upstream request")
+	}
+}

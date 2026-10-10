@@ -19,6 +19,7 @@ var audiusClient = &http.Client{Timeout: 10 * time.Second}
 var audiusID = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
 
 type canteenTrack struct {
+	LyricID  string `json:"lyric_id,omitempty"`
 	Source   string `json:"source"`
 	Version  string `json:"version"`
 	Album    string `json:"album"`

@@ -85,6 +85,18 @@ func (g *catalogGateway) get(ctx context.Context, params url.Values) ([]byte, er
 		if len(items) == 0 {
 			ttl = 15 * time.Second
 		}
+	} else if params.Get("types") == "lyric" {
+		var item struct {
+			Lyric       string `json:"lyric"`
+			Translation string `json:"tlyric"`
+		}
+		if err := json.Unmarshal(body, &item); err != nil {
+			return nil, err
+		}
+		ttl = 10 * time.Minute
+		if item.Lyric == "" && item.Translation == "" {
+			ttl = time.Minute
+		}
 	} else {
 		var item struct {
 			URL string `json:"url"`
@@ -163,10 +175,11 @@ func (g *catalogGateway) search(ctx context.Context, source, q string, page int)
 		return nil, false, err
 	}
 	var items []struct {
-		ID     string   `json:"id"`
-		Name   string   `json:"name"`
-		Artist []string `json:"artist"`
-		Album  string   `json:"album"`
+		ID      string   `json:"id"`
+		Name    string   `json:"name"`
+		Artist  []string `json:"artist"`
+		Album   string   `json:"album"`
+		LyricID string   `json:"lyric_id"`
 	}
 	if err = json.Unmarshal(body, &items); err != nil {
 		return nil, false, err
@@ -178,7 +191,11 @@ func (g *catalogGateway) search(ctx context.Context, source, q string, page int)
 			continue
 		}
 		seen[t.ID] = true
-		tracks = append(tracks, canteenTrack{ID: t.ID, Source: source, Name: t.Name, Artist: strings.Join(t.Artist, " / "), Album: t.Album, Version: catalogVersion(t.Name)})
+		lyricID := t.LyricID
+		if !validCatalogID(source, lyricID) {
+			lyricID = t.ID
+		}
+		tracks = append(tracks, canteenTrack{LyricID: lyricID, ID: t.ID, Source: source, Name: t.Name, Artist: strings.Join(t.Artist, " / "), Album: t.Album, Version: catalogVersion(t.Name)})
 	}
 	return tracks, len(items) >= gdPageSize, nil
 }
@@ -333,4 +350,35 @@ func (a *app) canteenPlayback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOut(w, 200, map[string]any{"url": result.URL, "bitrate": result.Bitrate})
+}
+
+func (a *app) canteenLyrics(w http.ResponseWriter, r *http.Request) {
+	source, id := r.URL.Query().Get("source"), r.URL.Query().Get("id")
+	if !validCatalogID(source, id) {
+		fail(w, 400, "歌曲编号或来源不正确")
+		return
+	}
+	owner := r.Context().Value(guestKey).(string)
+	if !a.limits.allow("canteen-lyrics:"+owner, 20) {
+		fail(w, 429, "歌词请求较多，请稍后再试")
+		return
+	}
+	if source == "audius" {
+		jsonOut(w, 200, map[string]string{"lyric": "", "translation": ""})
+		return
+	}
+	body, err := gdCatalog.get(r.Context(), url.Values{"types": {"lyric"}, "source": {source}, "id": {id}})
+	if err != nil {
+		fail(w, 502, "歌词暂时没跟上，音乐照常播放")
+		return
+	}
+	var result struct {
+		Lyric       string `json:"lyric"`
+		Translation string `json:"tlyric"`
+	}
+	if json.Unmarshal(body, &result) != nil || len(result.Lyric) > 128<<10 || len(result.Translation) > 128<<10 {
+		fail(w, 502, "歌词格式暂不支持")
+		return
+	}
+	jsonOut(w, 200, map[string]string{"lyric": result.Lyric, "translation": result.Translation})
 }

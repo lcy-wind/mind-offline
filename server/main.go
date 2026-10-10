@@ -241,6 +241,7 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/music/{provider}/playback", a.withMusicProvider(a.customer(a.musicPlayback)))
 	m.HandleFunc("GET /api/canteen/search", a.customer(a.canteenSearch))
 	m.HandleFunc("POST /api/canteen/playback", a.customer(a.canteenPlayback))
+	m.HandleFunc("GET /api/canteen/lyrics", a.customer(a.canteenLyrics))
 	m.HandleFunc("GET /api/menu", a.menu)
 	m.HandleFunc("GET /api/me", a.customer(a.me))
 	m.HandleFunc("POST /api/claim", a.customer(a.claim))
