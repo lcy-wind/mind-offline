@@ -4,6 +4,7 @@ import MusicPanel from "./MusicPanel.vue";
 import MusicCanteen from "./MusicCanteen.vue";
 import { playerState, type MusicProvider } from "../lib/player";
 const props = defineProps<{ accountId: string; foreground: boolean }>();
+const showPlatformBindings = false;
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 const active = ref<MusicProvider | "canteen">(
   "canteen",
@@ -30,18 +31,18 @@ function select(provider: MusicProvider | "canteen") {
   <view class="music-lab-container">
   <view class="music-platforms">
     <button :class="{ selected: active === 'canteen' }" @click="select('canteen')"><text>♫</text> 音乐食堂</button>
-    <button :class="{ selected: active === 'netease' }" @click="select('netease')"><text>♫</text> 网易云音乐</button>
-    <button :class="{ selected: active === 'kugou' }" @click="select('kugou')"><text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text></button>
+    <button v-if="showPlatformBindings" :class="{ selected: active === 'netease' }" @click="select('netease')"><text>♫</text> 网易云音乐</button>
+    <button v-if="showPlatformBindings" :class="{ selected: active === 'kugou' }" @click="select('kugou')"><text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text></button>
   </view>
   <view class="platform-hint"
-    >切换页面继续播放；选择另一平台的歌曲时，自动切换播放。</view
+    >切换菜单也能继续听歌，顶部可暂停或切歌。</view
   ><MusicCanteen
     v-show="active === 'canteen'"
     ref="canteen"
     :key="props.accountId"
     @auth-expired="emit('auth-expired')"
   /><MusicPanel
-    v-if="active !== 'canteen'"
+    v-if="showPlatformBindings && active !== 'canteen'"
     :key="props.accountId + active"
     :account-id="props.accountId"
     :foreground="props.foreground"
