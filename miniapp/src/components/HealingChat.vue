@@ -170,7 +170,7 @@ defineExpose({stop});
           </div>
           <button v-if="!follow && sending" class="follow-button" @click="follow = true; scrollBottom()">回到最新回复 ↓</button>
           <view class="composer">
-            <component :is="'textarea'" :value="draft" @input="editDraft" maxlength="4000" rows="3" :disabled="sending || loading || !enabled" placeholder="说说今天的心情，或者随便聊点什么…" aria-label="聊天消息" @keydown="keyboardSend" />
+            <component :is="'textarea'" class="composer-input" :value="draft" @input="editDraft" maxlength="4000" rows="3" :disabled="sending || loading || !enabled" placeholder="说说今天的心情，或者随便聊点什么…" aria-label="聊天消息" @keydown="keyboardSend" />
             <view class="composer-bottom"><text>{{ draft.length }}/4000 · Enter 发送，Shift+Enter 换行</text><button v-if="sending" @click="stop" class="stop-button">停止生成 ■</button><button v-else class="primary send-button" :disabled="!draft.trim() || loading || !enabled" @click="send()">发送 ↑</button></view>
           </view>
           <text class="privacy-note">回复由 AI 生成。聊天内容与角色设定会发送至智谱处理；记录保存在你的食堂账号下。</text>
@@ -227,7 +227,10 @@ defineExpose({stop});
 .user .bubble { background: #e9efcf; color: #737c51; border-radius: 12px 12px 3px 12px; }
 .typing-dot { color: #b599c6; }.turn-state { display: flex; align-items: center; gap: 8px; font-size: 10px; color: #b49aac; margin-top: 7px; }.turn-state button { border: 0; background: transparent; margin: 0; padding: 2px 5px; font-size: 10px; color: #8b699d; }
 .composer { margin: 0 22px 10px; border: 1px solid #ddcfe6; border-radius: 10px; padding: 12px; background: white; }
-.composer textarea { display: block; box-sizing: border-box; width: 100%; min-height: 72px; max-height: 170px; resize: vertical; outline: 0; border: 0; color: #6f5a7c; background: transparent; font-family: inherit; font-size: 13px; line-height: 1.8; }
+.composer:focus-within { border-color: #b49ac5; box-shadow: 0 0 0 2px #eae0f240; }
+.composer-input { display: block; box-sizing: border-box; -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; height: 84px; min-height: 84px; max-height: 170px; resize: none; overflow-y: auto; outline: none; border: none; border-radius: 0; box-shadow: none; margin: 0 0 10px; padding: 0; color: #6f5a7c; background: transparent; font-family: inherit; font-size: 13px; line-height: 1.8; }
+.composer-input::placeholder { color: #b6a8bc; }
+.composer-input:disabled { color: #a799af; cursor: default; }
 .composer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 10px; }.composer-bottom > text { font-size: 9px; color: #b6a8bc; }.send-button { margin: 0; padding: 8px 16px; font-size: 12px; }.stop-button { margin: 0; padding: 8px 12px; font-size: 12px; border: 1px solid #d9c7e2; border-radius: 6px; background: #f2eaf7; color: #9675a5; }
 .privacy-note { display: block; padding: 0 22px 16px; font-size: 9px; color: #b4a6b8; line-height: 1.8; }
 .chat-error { padding: 12px 22px; font-size: 12px; color: #ac778b; background: #faeef0; line-height: 1.8; }.chat-error button { display: inline; background: none; border: 0; font-size: 11px; color: #97677e; }
