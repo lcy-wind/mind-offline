@@ -17,6 +17,7 @@ import {
 } from "../../lib/api";
 const tab = ref("menu"),
   category = ref("全部补给"),
+  menuSearch = ref(""),
   menu = ref<Dish[]>([]),
   me = ref<Guest>({ id: "", username: "", balance: 0, claimed_today: false }),
   orders = ref<Order[]>([]);
@@ -147,11 +148,29 @@ async function signOut() {
     busy.value = false;
   }
 }
-const filtered = computed(() =>
-  menu.value.filter(
-    (d) => category.value === "全部补给" || d.category === category.value,
-  ),
+const searchWords = computed(() =>
+  menuSearch.value
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean),
 );
+const filtered = computed(() =>
+  menu.value.filter((d) => {
+    if (category.value !== "全部补给" && d.category !== category.value)
+      return false;
+    const text = [d.name, d.description, d.category]
+      .join(" ")
+      .normalize("NFKC")
+      .toLowerCase();
+    return searchWords.value.every((word) => text.includes(word));
+  }),
+);
+function resetMenuSearch() {
+  menuSearch.value = "";
+  category.value = "全部补给";
+}
 const count = computed(() => cart.value.reduce((s, i) => s + i.quantity, 0));
 const total = computed(() =>
   cart.value.reduce((s, i) => s + (i.price || 0) * i.quantity, 0),
@@ -617,6 +636,30 @@ async function saveReceipt() {
               >{{ menu.length }} 款精神补给</text
             ></view
           >
+          <view class="menu-search"
+            ><text class="menu-search-icon">⌕</text
+            ><input
+              v-model="menuSearch"
+              class="menu-search-input"
+              placeholder="搜点想吃的，比如：奶茶、摸鱼、下班"
+              maxlength="60"
+              confirm-type="search"
+              aria-label="搜索菜品名称或描述"
+            /><button
+              v-if="menuSearch"
+              class="menu-search-clear"
+              aria-label="清空搜索"
+              @click="menuSearch = ''"
+            >
+              ×
+            </button></view
+          >
+          <view v-if="searchWords.length" class="menu-search-summary"
+            ><text
+              >在{{ category === "全部补给" ? "全部菜单" : category }}中找到
+              {{ filtered.length }} 款补给</text
+            ><button @click="resetMenuSearch">重置筛选</button></view
+          >
           <scroll-view scroll-x class="categories"
             ><view class="category-row"
               ><button
@@ -632,7 +675,17 @@ async function saveReceipt() {
           >
           <view v-if="loading" class="empty">食堂正在掀锅盖…</view>
           <view v-else-if="!filtered.length" class="empty"
-            >这个窗口还在备菜，换一个看看。</view
+            ><view>{{
+              searchWords.length ? "没搜到这份精神补给。" : "这个窗口还在备菜。"
+            }}</view
+            ><text class="muted">{{
+              searchWords.length
+                ? "试试更短的关键词，或者换个分类。"
+                : "换一个分类看看吧。"
+            }}</text
+            ><button class="outline search-reset" @click="resetMenuSearch">
+              查看全部菜单 →
+            </button></view
           >
           <view class="dish-grid"
             ><view
@@ -2324,5 +2377,74 @@ async function saveReceipt() {
 }
 .app-shell.has-player .footer {
   padding-bottom: 235px;
+}
+</style>
+
+<style>
+.menu-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8dacc;
+  background: #faf9f2;
+  border-radius: 7px;
+  padding: 0 14px;
+  margin: 0 0 16px;
+  height: 46px;
+}
+.menu-search:focus-within {
+  border-color: #a89aba;
+  box-shadow: 0 0 0 2px #a89aba18;
+}
+.menu-search-icon {
+  font-size: 24px;
+  color: #8f9a7d;
+}
+.menu-search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  height: 44px;
+  color: #4c553f;
+}
+.menu-search-clear {
+  font-size: 22px;
+  color: #969e88;
+  padding: 0 3px;
+  cursor: pointer;
+}
+.menu-search-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: #8e967d;
+  margin: -3px 0 16px;
+  gap: 12px;
+}
+.menu-search-summary button {
+  font-size: 10px;
+  color: #80649f;
+  cursor: pointer;
+}
+.search-reset {
+  display: block;
+  margin: 18px auto;
+  max-width: 180px;
+}
+@media (max-width: 760px) {
+  .menu-search {
+    height: 42px;
+    padding: 0 11px;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .menu-search-input {
+    font-size: 11px;
+    height: 40px;
+  }
+  .menu-search-summary {
+    font-size: 9px;
+  }
 }
 </style>

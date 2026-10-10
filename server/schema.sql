@@ -48,3 +48,33 @@ INSERT INTO dishes(id,name,description,category,emoji,price) VALUES
  (9,'下班自由套餐','拌面 + 气泡水 + 不回工作消息的勇气。','离职套餐','🍱',48)
  ON CONFLICT(id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('dishes','id'),GREATEST((SELECT COALESCE(max(id),1) FROM dishes),1));
+
+-- Add the expanded menu once; generated IDs preserve dishes created by the shop owner.
+CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+WITH applied AS (
+ INSERT INTO schema_migrations(version) VALUES('20261010_expanded_menu_v1') ON CONFLICT DO NOTHING RETURNING version
+)
+INSERT INTO dishes(name,description,category,emoji,price)
+SELECT name,description,category,emoji,price FROM (VALUES
+ ('已读乱回炒饭','米饭粒粒分明，工作消息句句不回。','续命主食','🍚',26),
+ ('带薪摸鱼酸菜鱼','鱼已经摸好了，酸菜负责替你阴阳怪气。','续命主食','🐟',38),
+ ('拒绝加班咖喱饭','咖喱可以加，今天的班不能加。','续命主食','🍛',32),
+ ('需求冻结牛肉面','牛肉加满，需求请下个版本再提。','续命主食','🥩',35),
+ ('周五快乐汉堡','两片面包夹住五天的委屈，快乐大口吃。','续命主食','🍔',29),
+ ('撤回消息奶茶','奶茶三分糖，刚才那句话当我没说。','精神饮品','🧋',19),
+ ('开会静音拿铁','麦克风已关闭，咖啡因已上线。','精神饮品','☕',24),
+ ('周报兑水柠檬水','工作内容适量展开，柠檬水不掺假。','精神饮品','🍋',12),
+ ('情绪缓冲热可可','先缓冲一下，世界不差你这五分钟。','精神饮品','🍫',23),
+ ('下班倒计时橙汁','维生素补上，今天的进度条快走完。','精神饮品','🍊',18),
+ ('老板别叭叭鸡米花','嘴巴用来吃鸡米花，就没空听画饼。','摸鱼小食','🍗',22),
+ ('周报压缩小蛋糕','把一周的辛苦，压缩成一口甜。','摸鱼小食','🍰',21),
+ ('会议逃生甜甜圈','甜甜圈中间的洞，是通往下班的出口。','摸鱼小食','🍩',16),
+ ('已完成烤肠','不用再改了，这根烤肠已经最终最终版。','摸鱼小食','🌭',14),
+ ('周末预支冰淇淋','先尝一口周末，融化的只有烦恼。','摸鱼小食','🍨',18),
+ ('周一重启套餐','咖喱饭 + 冰美式。重启大脑，不重启工作群。','离职套餐','🔋',45),
+ ('带薪摸鱼双人餐','酸菜鱼 + 炒饭 + 两杯柠檬水，快乐找人平摊。','离职套餐','🐠',76),
+ ('拒绝内耗快乐餐','汉堡 + 薯条 + 橙汁。今天只消耗卡路里。','离职套餐','🍟',52),
+ ('工位隐身下午茶','拿铁 + 小蛋糕，暂时把在线状态设为离线。','离职套餐','🫖',39),
+ ('精神离职毕业餐','牛肉面 + 热可可 + 甜甜圈，祝你准时下班。','离职套餐','🎓',66)
+) AS additions(name,description,category,emoji,price)
+WHERE EXISTS(SELECT 1 FROM applied);
