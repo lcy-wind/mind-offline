@@ -12,6 +12,7 @@ const enabled = ref(false), ready = ref(false), loading = ref(false), creating =
 const error = ref(""), draft = ref(""), roleCode = ref("INFP"), roleName = ref(""), roleStyle = ref("");
 const showCreate = ref(false), deleting = ref("");
 const messages = ref<HTMLDivElement | null>(null);
+const composer = ref<HTMLTextAreaElement | null>(null);
 const follow = ref(true);
 const pickedRole = computed(() => roles.value.find(r => r.code === roleCode.value));
 let alive = true, revision = 0;
@@ -92,6 +93,7 @@ async function send(existing?: Turn) {
   else { turns.value.push({id:requestID,user:text,assistant:"",status:"pending",created_at:new Date().toISOString()}); turn = turns.value[turns.value.length-1]; draft.value = ""; }
   const target = turn;
   sending.value = true; error.value = ""; stopped = false; follow.value = true; scrollBottom();
+  if (!existing) composer.value?.focus({preventScroll: true});
   const abort = new AbortController(); controller = abort;
   const timeout = setTimeout(() => abort.abort(), 100000);
   try {
@@ -170,7 +172,7 @@ defineExpose({stop});
           </div>
           <button v-if="!follow && sending" class="follow-button" @click="follow = true; scrollBottom()">回到最新回复 ↓</button>
           <view class="composer">
-            <component :is="'textarea'" class="composer-input" :value="draft" @input="editDraft" maxlength="4000" rows="3" :disabled="sending || loading || !enabled" placeholder="说说今天的心情，或者随便聊点什么…" aria-label="聊天消息" @keydown="keyboardSend" />
+            <component :is="'textarea'" ref="composer" class="composer-input" :value="draft" @input="editDraft" maxlength="4000" rows="3" :disabled="loading || !enabled" placeholder="说说今天的心情，或者随便聊点什么…" aria-label="聊天消息" @keydown="keyboardSend" />
             <view class="composer-bottom"><text>{{ draft.length }}/4000 · Enter 发送，Shift+Enter 换行</text><button v-if="sending" @click="stop" class="stop-button">停止生成 ■</button><button v-else class="primary send-button" :disabled="!draft.trim() || loading || !enabled" @click="send()">发送 ↑</button></view>
           </view>
           <text class="privacy-note">回复由 AI 生成。聊天内容与角色设定会发送至智谱处理；记录保存在你的食堂账号下。</text>
