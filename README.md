@@ -79,12 +79,12 @@ python3 scripts/build.py
 
 ## 微信小程序
 
-目前没有用户 AppID，交付以 H5 网页试玩为准；编译产物可在 `miniapp/dist/build/mp-weixin` 查看，尚未完成真机预览或微信发布。
+已配置个人主体小程序 AppID `wxed0ceeafdab6e387`。当前先准备开发预览；尚未完成真机验证或微信发布，备案状态、服务类目与服务器合法域名待核对。音乐食堂、精神疗愈仍为网页专用，需要另行适配。
 
-取得 AppID 后：
+开发预览：
 
-1. 在 `miniapp/src/manifest.json` 的 `mp-weixin.appid` 填写自己的 AppID。
-2. 执行 `npm --prefix miniapp run dev:mp-weixin`，使用微信开发者工具导入 `miniapp/dist/dev/mp-weixin`。
+1. AppID 已写入 `miniapp/src/manifest.json` 的 `mp-weixin.appid`；顶层 `appid` 是 uni-app 应用标识，不填微信 AppID。
+2. 执行 `npm --prefix miniapp run build:mp-weixin`，使用微信开发者工具导入 `miniapp/dist/build/mp-weixin`；需要热更新时执行 `npm --prefix miniapp run dev:mp-weixin` 并导入 `miniapp/dist/dev/mp-weixin`。
 3. 接口域名固定为 `https://mind-offline.duckdns.org`（见 `miniapp/src/lib/api.ts`）。实际真机/发布前按微信当时要求配置合法域名等条件。
 4. 在真机验证登录、网络、小票保存、界面和生命周期。目前使用自建账号密码登录，未接微信身份；不要将 AppSecret 放进前端。
 
