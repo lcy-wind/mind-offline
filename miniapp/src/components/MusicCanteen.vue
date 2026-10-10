@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { request, ApiError } from "../lib/api";
+import { createQueueOrder, moveQueue, type PlayMode } from "../lib/canteen-queue";
 import { parseLyrics, activeLyricIndex, type Lyrics } from "../lib/lyrics";
 type Source = "netease" | "joox" | "audius";
 interface Track { id: string; lyric_id?: string; source: Source; name: string; artist: string; genre: string; album: string; version: string; duration: number }
@@ -27,6 +28,31 @@ const more = ref(false);
 const page = ref(1);
 const queue = ref<Track[]>([]);
 const current = ref(-1);
+const playMode = ref<PlayMode>("sequence");
+const playModes: {id: PlayMode; label: string; hint: string}[] = [
+  {id:"sequence", label:"顺序播放", hint:"按列表顺序播放，最后一首结束后停止"},
+  {id:"shuffle", label:"随机播放", hint:"每轮随机听完所有歌曲，再开始下一轮"},
+  {id:"single", label:"单曲循环", hint:"当前歌曲循环播放，仍可手动切歌"},
+  {id:"loop", label:"列表循环", hint:"播完最后一首后，回到第一首"},
+];
+const modeLabel = computed(() => playModes.find(m => m.id === playMode.value)!.label);
+const modeHint = computed(() => playModes.find(m => m.id === playMode.value)!.hint);
+const queueOrder = ref(createQueueOrder(0, -1, "sequence"));
+const canPrevious = computed(() => !!moveQueue(queueOrder.value, -1));
+const canNext = computed(() => queue.value.length > 0 && (playMode.value !== "sequence" || current.value < queue.value.length - 1));
+function setPlayMode(mode: PlayMode) {
+  playMode.value = mode;
+  queueOrder.value = createQueueOrder(queue.value.length, current.value, mode);
+}
+function cyclePlayMode() {
+  const index = playModes.findIndex(m => m.id === playMode.value);
+  setPlayMode(playModes[(index + 1) % playModes.length].id);
+}
+function playAll() {
+  if (!visibleTracks.value.length) return;
+  const start = playMode.value === "shuffle" ? Math.floor(Math.random() * visibleTracks.value.length) : 0;
+  play(start, true);
+}
 const selected = computed(() => queue.value[current.value]);
 const audio = ref<HTMLAudioElement | null>(null);
 const streamURL = ref("");
@@ -136,10 +162,19 @@ function changeVolume(e: Event) {
   if (audio.value) audio.value.volume = volume.value / 100;
 }
 function onEnded(e: Event) {
-  if (!audioEvent(e)) return;
+  const a = audioEvent(e);
+  if (!a) return;
   isPlaying.value = false;
-  if (current.value < queue.value.length - 1) step(1);
-  else playback.value = "本轮补给结束，换首歌继续摸鱼。";
+  const next = moveQueue(queueOrder.value, 1, true);
+  if (!next) { playback.value = "本轮补给结束，换首歌继续摸鱼。"; return; }
+  queueOrder.value = next;
+  const index = next.order[next.position];
+  if (index === current.value) {
+    // Reuse the buffered audio and lyrics; looping does not spend API quota.
+    a.currentTime = 0; elapsed.value = 0;
+    const run = playGeneration;
+    void a.play().catch(() => { if (!disposed && run === playGeneration) playback.value = "点击播放按钮，继续这一轮补给。"; });
+  } else play(index, false, true);
 }
 async function loadLyrics(track: Track, run: number) {
   lyricStatus.value = "歌词正在赶来的路上…";
@@ -197,7 +232,7 @@ function findAlternative() {
   source.value = t.source === "netease" ? "joox" : "netease";
   search();
 }
-async function play(index: number, fromResults = false) {
+async function play(index: number, fromResults = false, preserveOrder = false) {
   // #ifdef H5
   const nextTrack = (fromResults ? visibleTracks.value : queue.value)[index];
   if (!nextTrack) return;
@@ -208,6 +243,9 @@ async function play(index: number, fromResults = false) {
   audio.value?.load();
   streamURL.value = "";
   if (fromResults) queue.value = [...visibleTracks.value];
+  if (fromResults || !queueOrder.value.order.length || (!preserveOrder && index !== current.value)) {
+    queueOrder.value = createQueueOrder(queue.value.length, index, playMode.value);
+  }
   current.value = index;
   elapsed.value = 0; total.value = 0; isPlaying.value = false; dragging.value = false;
   lyrics.value = { lines: [], plain: [] }; followLyrics.value = true;
@@ -232,9 +270,11 @@ async function play(index: number, fromResults = false) {
   } finally { if (!disposed && run === playGeneration) resolving.value = false; }
   // #endif
 }
-function step(delta: number) {
-  const next = current.value + delta;
-  if (next >= 0 && next < queue.value.length) play(next);
+function step(delta: -1 | 1) {
+  const next = moveQueue(queueOrder.value, delta);
+  if (!next) return;
+  queueOrder.value = next;
+  play(next.order[next.position], false, true);
 }
 function stop() {
   playGeneration++;
@@ -247,6 +287,7 @@ function stop() {
   elapsed.value = 0; total.value = 0; isPlaying.value = false; dragging.value = false;
   lyrics.value = { lines: [], plain: [] }; lyricStatus.value = "";
   queue.value = [];
+  queueOrder.value = createQueueOrder(0, -1, playMode.value);
   playback.value = "";
   resolving.value = false;
 }
@@ -295,12 +336,18 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
           @input="previewSeek" @change="commitSeek" @blur="dragging = false" />
       </view>
       <view class="transport">
-        <button class="skip" :disabled="current <= 0" @click="step(-1)" aria-label="上一首">⏮</button>
+        <button class="skip" :disabled="!canPrevious" @click="step(-1)" aria-label="上一首">⏮</button>
         <button class="main-play" :disabled="resolving" @click="togglePlayback" :aria-label="isPlaying ? '暂停' : '播放'">{{ resolving ? '取餐中…' : isPlaying ? 'Ⅱ 暂停一下' : '▶ 继续开饭' }}</button>
-        <button class="skip" :disabled="current >= queue.length - 1" @click="step(1)" aria-label="下一首">⏭</button>
+        <button class="skip" :disabled="!canNext" @click="step(1)" aria-label="下一首">⏭</button>
       </view>
-      <view class="player-actions"><button :disabled="resolving" @click="play(current)">重试播放</button><button @click="findAlternative">换源找同曲</button><view class="volume"><text>音量</text><component :is="'input'" type="range" min="0" max="100" step="1" :value="volume" aria-label="音量" @input="changeVolume" /></view></view>
+      <view class="queue-summary">{{ modeLabel }} · 播放队列 {{ queue.length }} 首</view>
+      <view class="player-actions"><button class="mode-button" @click="cyclePlayMode" :title="modeHint">{{ modeLabel }} ↻</button><button :disabled="resolving" @click="play(current)">重试播放</button><button @click="findAlternative">换源找同曲</button><view class="volume"><text>音量</text><component :is="'input'" type="range" min="0" max="100" step="1" :value="volume" aria-label="音量" @input="changeVolume" /></view></view>
 
+    </view>
+    <view class="queue-toolbar">
+      <button class="play-all" :disabled="!visibleTracks.length" @click="playAll">▶ 播放全部 <text>{{ visibleTracks.length }} 首</text></button>
+      <view class="mode-options"><button v-for="mode in playModes" :key="mode.id" :class="{ chosen: playMode === mode.id }" :aria-pressed="playMode === mode.id" :title="mode.hint" @click="setPlayMode(mode.id)">{{ mode.label }}</button></view>
+      <text class="queue-hint">{{ modeHint }}{{ libraryMode === 'search' ? '；播放全部使用当前已加载的搜索结果。' : '。' }}</text>
     </view>
     <view class="results-heading"><text>{{ libraryMode === 'favorites' ? '我的私藏补给' : '今日精神菜单' }}</text><text>{{ visibleTracks.length }} 首{{ libraryMode === 'search' && searched ? ' · ' + searched : '' }}</text></view>
     <view v-if="libraryMode === 'search' && sourceStatus.length" class="source-status"><text v-for="s in sourceStatus" :key="s.source">{{ sourceName(s.source) }}：{{ s.error || (s.count + ' 条结果') }}</text></view>
@@ -382,6 +429,15 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
 
 .player-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 12px; }
 button:disabled { opacity: .45; }
+.queue-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 22px; border-top: 1px solid #e7e0ec; }
+.play-all { display: flex; align-items: center; gap: 9px; margin: 0; padding: 10px 16px; font-size: 13px; border-radius: 7px; border: 0; background: #806096; color: #fff; }
+.play-all text { font-size: 10px; opacity: .8; }
+.mode-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.mode-options button { padding: 8px 10px; margin: 0; border: 1px solid #dfd6e5; border-radius: 6px; background: transparent; font-size: 11px; color: #9985a6; }
+.mode-options button.chosen { background: #eee4f4; color: #76528f; border-color: #b6a0c7; }
+.queue-hint { flex-basis: 100%; font-size: 10px; line-height: 1.7; color: #a09aa6; }
+.queue-summary { margin-top: 16px; text-align: center; color: #9a85a7; font-size: 11px; }
+@media (max-width: 760px) { .queue-toolbar { padding: 14px 12px; gap: 10px; } .mode-options { gap: 4px; } .mode-options button { padding: 7px 8px; } }
 .results-heading { display: flex; justify-content: space-between; gap: 10px; padding: 12px 22px; font-size: 12px; color: #8c9177; border-bottom: 1px solid #e7e5d9; }
 .track { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; margin: 0; padding: 0 12px 0 0; background: transparent; border: 0; border-bottom: 1px solid #eeece1; border-radius: 0; line-height: 1.5; }
 .track-pick { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; padding: 15px 10px 15px 22px; margin: 0; border: 0; background: transparent; text-align: left; line-height: 1.5; }
