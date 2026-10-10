@@ -8,7 +8,7 @@ const frameKey = ref(0);
     <view class="canteen-heading">
       <view>
         <text class="canteen-title">音乐食堂</text>
-        <text class="canteen-note">米兔音乐 · 搜首歌，让耳朵先下班。</text>
+        <text class="canteen-note">精神食粮 · 搜首歌，让耳朵先下班。</text>
       </view>
       <!-- #ifdef H5 -->
       <button class="reload" @click="frameKey++">重新加载</button>
@@ -19,12 +19,12 @@ const frameKey = ref(0);
       :key="frameKey"
       class="music-frame"
       src="https://www.qqmp3.vip/"
-      title="音乐食堂 · 米兔音乐播放器"
+      title="音乐食堂 · 精神食粮播放器"
       sandbox="allow-scripts allow-same-origin allow-forms"
       allow="autoplay"
       referrerpolicy="no-referrer"
     ></iframe>
-    <text class="canteen-note footer">搜索与播放由米兔音乐提供；离开音乐食堂会停止播放。页面空白时可重新加载。</text>
+    <text class="canteen-note footer">搜索与播放由第三方站点提供；离开音乐食堂会停止播放。页面空白时可重新加载。</text>
     <!-- #endif -->
     <!-- #ifndef H5 -->
     <text class="canteen-note">音乐食堂目前支持网页试玩版，请在浏览器打开食堂使用。</text>
