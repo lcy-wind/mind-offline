@@ -37,6 +37,7 @@ var assets embed.FS
 type app struct {
 	db            *pgxpool.Pool
 	music         *musicClient
+	ai            *healingAI
 	adminPassword string
 	limits        limiter
 }
@@ -244,6 +245,12 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("GET /api/canteen/lyrics", a.customer(a.canteenLyrics))
 	m.HandleFunc("GET /api/canteen/favorites", a.customer(a.canteenFavorites))
 	m.HandleFunc("POST /api/canteen/favorites", a.customer(a.saveCanteenFavorite))
+	m.HandleFunc("GET /api/healing/config", a.customer(a.healingConfig))
+	m.HandleFunc("GET /api/healing/conversations", a.customer(a.healingList))
+	m.HandleFunc("POST /api/healing/conversations", a.customer(a.healingCreate))
+	m.HandleFunc("GET /api/healing/conversations/{id}", a.customer(a.healingDetail))
+	m.HandleFunc("POST /api/healing/conversations/{id}/delete", a.customer(a.healingDelete))
+	m.HandleFunc("POST /api/healing/conversations/{id}/messages", a.customer(a.healingSend))
 	m.HandleFunc("GET /api/menu", a.menu)
 	m.HandleFunc("GET /api/me", a.customer(a.me))
 	m.HandleFunc("POST /api/claim", a.customer(a.claim))
@@ -271,7 +278,12 @@ func (a *app) routes() http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		timeout := 10 * time.Second
+		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/api/healing/conversations/") && strings.HasSuffix(r.URL.Path, "/messages") {
+			timeout = 90 * time.Second
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(95 * time.Second))
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		m.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -628,7 +640,7 @@ func main() {
 	if e != nil {
 		log.Fatal("invalid music service configuration")
 	}
-	a := &app{db: db, adminPassword: pw, music: music}
+	a := &app{db: db, adminPassword: pw, music: music, ai: configureHealing()}
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:18082"

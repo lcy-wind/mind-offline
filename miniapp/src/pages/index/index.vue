@@ -2,10 +2,12 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import MusicPanel from "../../components/MusicLab.vue";
+import HealingChat from "../../components/HealingChat.vue";
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);
+const healingChat = ref<InstanceType<typeof HealingChat> | null>(null);
 const musicLab = ref<InstanceType<typeof MusicPanel> | null>(null);
 const canteenPlayback = computed(() => musicLab.value?.canteenState);
 function openCanteenPlayer() {
@@ -56,6 +58,7 @@ const authMode = ref<"login" | "register">("login"),
 const hasLegacy = ref(Boolean(uni.getStorageSync("mind-offline-token")));
 let displayedToken = currentToken();
 function clearPrivateState() {
+  healingChat.value?.stop();
   musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
@@ -248,6 +251,7 @@ onHide(() => {
   clearInterval(timer);
 });
 onUnload(() => {
+  healingChat.value?.stop();
   musicLab.value?.stop();
   clearInterval(timer);
   player.reset();
@@ -592,12 +596,13 @@ async function saveReceipt() {
           ><text>♫</text><text>音乐实验室</text
           ><text class="nav-index">03</text></view
         >
+        <view class="nav-item" :class="{ active: tab === 'healing' }" @click="tab = 'healing'"><text>☁</text><text>精神疗愈</text><text class="nav-index">04</text></view>
         <view
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">04</text></view
+          ><text class="nav-index">05</text></view
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -806,6 +811,7 @@ async function saveReceipt() {
           :foreground="musicForeground && tab === 'music'"
           @auth-expired="forgetSession"
         />
+        <HealingChat v-if="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
         <template v-if="tab === 'about'"
           ><view class="page-heading"
             ><text class="eyebrow">EMPLOYEE SURVIVAL GUIDE</text
@@ -2133,7 +2139,7 @@ async function saveReceipt() {
     display: none;
   }
   .nav-item {
-    flex: 1;
+    flex: 1 1 calc((100% - 10px) / 3);
     justify-content: center;
     gap: 6px;
     font-size: 11px;

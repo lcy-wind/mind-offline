@@ -98,3 +98,18 @@ CREATE TABLE IF NOT EXISTS canteen_music_favorites (
  created_at timestamptz NOT NULL DEFAULT now(),
  PRIMARY KEY(account_id, source, track_id)
 );
+
+CREATE TABLE IF NOT EXISTS healing_conversations (
+ id text PRIMARY KEY, account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ title text NOT NULL, mbti text NOT NULL, name text NOT NULL, style text NOT NULL DEFAULT '',
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS healing_conversations_owner ON healing_conversations(account_id,updated_at DESC);
+CREATE TABLE IF NOT EXISTS healing_turns (
+ conversation_id text NOT NULL REFERENCES healing_conversations(id) ON DELETE CASCADE,
+ request_id text NOT NULL, user_content text NOT NULL, assistant_content text NOT NULL DEFAULT '',
+ status text NOT NULL CHECK(status IN ('pending','complete','failed','interrupted')),
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(conversation_id,request_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS healing_one_pending ON healing_turns(conversation_id) WHERE status='pending';
