@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import MusicPanel from "./MusicPanel.vue";
 import MusicCanteen from "./MusicCanteen.vue";
-import { player, playerState, type MusicProvider } from "../lib/player";
+import { player, type MusicProvider } from "../lib/player";
 const props = defineProps<{ accountId: string; foreground: boolean }>();
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 const active = ref<MusicProvider | "canteen">(
-  playerState.track ? playerState.provider : "netease",
+  "canteen",
 );
+onMounted(() => player.reset());
 function select(provider: MusicProvider | "canteen") {
   if (active.value !== provider) {
     player.reset();
@@ -16,21 +17,12 @@ function select(provider: MusicProvider | "canteen") {
 }
 </script>
 <template>
-  <view class="music-platforms"
-    ><button
-      :class="{ selected: active === 'netease' }"
-      @click="select('netease')"
-    >
-      <text>♫</text> 网易云音乐</button
-    ><button :class="{ selected: active === 'kugou' }" @click="select('kugou')">
-      <text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text></button
-    ><button
-      :class="{ selected: active === 'canteen' }"
-      @click="select('canteen')"
-    >
-      <text>⌕</text> 音乐食堂
-    </button></view
-  ><view class="platform-hint"
+  <view class="music-platforms">
+    <button :class="{ selected: active === 'canteen' }" @click="select('canteen')"><text>♫</text> 音乐食堂</button>
+    <button :class="{ selected: active === 'netease' }" @click="select('netease')"><text>♫</text> 网易云音乐</button>
+    <button :class="{ selected: active === 'kugou' }" @click="select('kugou')"><text>♪</text> 酷狗音乐 <text class="platform-beta">实验</text></button>
+  </view>
+  <view class="platform-hint"
     >网易云、酷狗账号分别绑定，切换栏目会停止当前播放。</view
   ><MusicCanteen
     v-if="active === 'canteen'"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { request, ApiError } from "../lib/api";
 import { parseLyrics, activeLyricIndex, type Lyrics } from "../lib/lyrics";
 type Source = "netease" | "joox" | "audius";
@@ -12,6 +12,14 @@ const query = ref("");
 const searched = ref("");
 const searchedSource = ref<Source | "all">("all");
 const tracks = ref<Track[]>([]);
+const libraryMode = ref<"search" | "favorites">("search");
+const favorites = ref<Track[]>([]);
+const favoritesReady = ref(false);
+const favoritesLoading = ref(false);
+const favoriteError = ref("");
+const favoritePending = ref(new Set<string>());
+const visibleTracks = computed(() => libraryMode.value === "favorites" ? favorites.value : tracks.value);
+const favoriteKeys = computed(() => new Set(favorites.value.map(t => t.source + ":" + t.id)));
 const loading = ref(false);
 const error = ref("");
 const sourceStatus = ref<Result["sources"]>([]);
@@ -44,6 +52,37 @@ let playGeneration = 0;
 let disposed = false;
 const sourceName = (s: string) => ({netease:"网易云",joox:"JOOX",audius:"独立音乐",all:"华语聚合"}[s] || s);
 const trackKey = (t: Track) => t.source + ":" + t.id;
+async function loadFavorites() {
+  if (favoritesLoading.value) return;
+  favoritesLoading.value = true; favoriteError.value = "";
+  try {
+    const data = await request<{tracks: Track[]}>("/canteen/favorites");
+    if (disposed) return;
+    favorites.value = data.tracks; favoritesReady.value = true;
+  } catch (e) {
+    if (disposed) return;
+    if (e instanceof ApiError && e.status === 401) emit("auth-expired");
+    favoriteError.value = e instanceof Error ? e.message : "收藏暂时没加载出来";
+  } finally { if (!disposed) favoritesLoading.value = false; }
+}
+function isFavorite(track: Track) { return favoriteKeys.value.has(trackKey(track)); }
+async function toggleFavorite(track: Track) {
+  const key = trackKey(track);
+  if (!favoritesReady.value || favoritePending.value.has(key)) return;
+  const save = !isFavorite(track);
+  favoritePending.value.add(key); favoriteError.value = "";
+  try {
+    await request("/canteen/favorites", "POST", {track, favorite: save});
+    if (disposed) return;
+    favorites.value = favorites.value.filter(t => trackKey(t) !== key);
+    if (save) favorites.value.unshift({...track});
+  } catch (e) {
+    if (disposed) return;
+    if (e instanceof ApiError && e.status === 401) emit("auth-expired");
+    favoriteError.value = e instanceof Error ? e.message : "收藏保存失败，请重试";
+  } finally { if (!disposed) favoritePending.value.delete(key); }
+}
+onMounted(() => { loadFavorites(); });
 function duration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   return Math.floor(seconds / 60) + ":" + String(Math.floor(seconds % 60)).padStart(2, "0");
@@ -125,6 +164,7 @@ watch([activeLine, followLyrics], async () => {
 });
 
 async function search(append = false) {
+  libraryMode.value = "search";
   if (loading.value && append) return;
   const run = ++generation;
   const term = append ? searched.value : query.value.trim();
@@ -159,7 +199,7 @@ function findAlternative() {
 }
 async function play(index: number, fromResults = false) {
   // #ifdef H5
-  const nextTrack = (fromResults ? tracks.value : queue.value)[index];
+  const nextTrack = (fromResults ? visibleTracks.value : queue.value)[index];
   if (!nextTrack) return;
   const run = ++playGeneration;
   resolving.value = true;
@@ -167,7 +207,7 @@ async function play(index: number, fromResults = false) {
   audio.value?.removeAttribute("src");
   audio.value?.load();
   streamURL.value = "";
-  if (fromResults) queue.value = [...tracks.value];
+  if (fromResults) queue.value = [...visibleTracks.value];
   current.value = index;
   elapsed.value = 0; total.value = 0; isPlaying.value = false; dragging.value = false;
   lyrics.value = { lines: [], plain: [] }; followLyrics.value = true;
@@ -223,18 +263,30 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
       <text class="scope">华语多源菜单 · 同一首歌，多一个选择。能否播放以音源实际返回为准。</text>
     </view>
     <!-- #ifdef H5 -->
-    <view class="search-box">
+    <view class="library-tabs"><button :class="{ chosen: libraryMode === 'search' }" @click="libraryMode = 'search'">搜歌曲</button><button :class="{ chosen: libraryMode === 'favorites' }" @click="libraryMode = 'favorites'">♥ 我的收藏 {{ favoritesReady ? favorites.length : '' }}</button></view>
+    <view v-if="favoriteError" class="favorite-notice" role="alert">{{ favoriteError }}<button v-if="!favoritesReady" @click="loadFavorites">重新加载收藏</button></view>
+    <view v-if="libraryMode === 'search'" class="search-box">
       <input v-model="query" class="search-input" maxlength="80" placeholder="搜歌名或歌手，例如十年、周杰伦" confirm-type="search" @confirm="search()" />
       <button class="search-button" @click="search()">{{ loading ? "搜歌中…" : "开饭 · 搜歌" }}</button>
     </view>
-    <view class="sources"><button v-for="s in sourceOptions" :key="s" :class="{ chosen: source === s }" @click="chooseSource(s)">{{ sourceName(s) }}</button></view>
+    <view v-if="libraryMode === 'search'" class="sources"><button v-for="s in sourceOptions" :key="s" :class="{ chosen: source === s }" @click="chooseSource(s)">{{ sourceName(s) }}</button></view>
     <view v-if="selected" class="now-playing">
-      <view class="playing-heading"><text class="disc">♫</text><view class="playing-info"><text class="song-title">{{ selected.name }}</text><text class="artist">{{ selected.artist }} · {{ sourceName(selected.source) }} · {{ selected.version }}</text></view><button class="close" @click="stop">收餐 ×</button></view>
+      <view class="playing-heading"><text class="disc">♫</text><view class="playing-info"><text class="song-title">{{ selected.name }}</text><text class="artist">{{ selected.artist }} · {{ sourceName(selected.source) }} · {{ selected.version }}</text></view><button class="favorite-button" :class="{ saved: isFavorite(selected) }" :disabled="!favoritesReady || favoritePending.has(trackKey(selected))" @click="toggleFavorite(selected)" :aria-label="isFavorite(selected) ? '取消收藏' : '收藏歌曲'">{{ isFavorite(selected) ? '♥ 已收藏' : '♡ 收藏' }}</button><button class="close" @click="stop">收餐 ×</button></view>
       <text class="play-status" role="status">{{ playback || '给精神充点电。' }}</text>
       <audio ref="audio" :src="streamURL || undefined" preload="auto" class="audio-engine"
         @waiting="!resolving && (playback = '音频缓冲中，耳朵稍等一下…')"
         @playing="onPlaying" @pause="onPause" @error="onAudioError" @ended="onEnded"
         @timeupdate="updateTime" @loadedmetadata="updateTime" @durationchange="updateTime"></audio>
+      <view class="lyrics-heading"><text>歌词 / 跟着唱也算精神离职</text><button v-if="lyrics.lines.length" @click="followLyrics = !followLyrics">{{ followLyrics ? '自动跟随 ✓' : '恢复跟随 ↕' }}</button></view>
+      <div ref="lyricViewport" class="lyrics-box" @wheel="followLyrics = false" @touchmove="followLyrics = false">
+        <p v-if="lyricStatus" class="lyric-empty">{{ lyricStatus }}</p>
+        <template v-else-if="lyrics.lines.length">
+          <button v-for="(line, index) in lyrics.lines" :key="index" class="lyric-line" :class="{ 'lyric-active': index === activeLine }" :data-lyric-index="index" :aria-current="index === activeLine ? 'true' : undefined" :disabled="!total" @click="seekTo(line.time)">
+            <span>{{ line.text }}</span><small v-if="line.translation">{{ line.translation }}</small>
+          </button>
+        </template>
+        <p v-for="(line, index) in lyrics.plain" v-else :key="index" class="plain-lyric">{{ line }}</p>
+      </div>
       <view class="timeline">
         <view class="time-labels"><text>{{ duration(displayTime) }}</text><text>{{ duration(total) }}</text></view>
         <component :is="'input'" type="range" class="seek-slider" min="0" :max="total || 1" step="0.1"
@@ -248,30 +300,26 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
         <button class="skip" :disabled="current >= queue.length - 1" @click="step(1)" aria-label="下一首">⏭</button>
       </view>
       <view class="player-actions"><button :disabled="resolving" @click="play(current)">重试播放</button><button @click="findAlternative">换源找同曲</button><view class="volume"><text>音量</text><component :is="'input'" type="range" min="0" max="100" step="1" :value="volume" aria-label="音量" @input="changeVolume" /></view></view>
-      <view class="lyrics-heading"><text>歌词 / 跟着唱也算精神离职</text><button v-if="lyrics.lines.length" @click="followLyrics = !followLyrics">{{ followLyrics ? '自动跟随 ✓' : '恢复跟随 ↕' }}</button></view>
-      <div ref="lyricViewport" class="lyrics-box" @wheel="followLyrics = false" @touchmove="followLyrics = false">
-        <p v-if="lyricStatus" class="lyric-empty">{{ lyricStatus }}</p>
-        <template v-else-if="lyrics.lines.length">
-          <button v-for="(line, index) in lyrics.lines" :key="index" class="lyric-line" :class="{ 'lyric-active': index === activeLine }" :data-lyric-index="index" :aria-current="index === activeLine ? 'true' : undefined" :disabled="!total" @click="seekTo(line.time)">
-            <span>{{ line.text }}</span><small v-if="line.translation">{{ line.translation }}</small>
-          </button>
-        </template>
-        <p v-for="(line, index) in lyrics.plain" v-else :key="index" class="plain-lyric">{{ line }}</p>
-      </div>
+
     </view>
-    <view class="results-heading"><text>今日精神菜单</text><text>{{ tracks.length }} 首{{ searched ? ' · ' + searched : ' · 等待点歌' }}</text></view>
-    <view v-if="sourceStatus.length" class="source-status"><text v-for="s in sourceStatus" :key="s.source">{{ sourceName(s.source) }}：{{ s.error || (s.count + ' 条结果') }}</text></view>
-    <view v-if="error" class="notice" role="alert">{{ error }}<button @click="search()">再试一次</button></view>
-    <view v-else-if="loading && !tracks.length" class="empty" role="status">正在翻找精神补给，请稍等…</view>
-    <view v-else-if="!tracks.length" class="empty">{{ searched ? '这个来源暂时没有搜索结果，试试其他关键词或切换来源。' : '输入歌名或歌手，给耳朵加个餐。' }}</view>
+    <view class="results-heading"><text>{{ libraryMode === 'favorites' ? '我的私藏补给' : '今日精神菜单' }}</text><text>{{ visibleTracks.length }} 首{{ libraryMode === 'search' && searched ? ' · ' + searched : '' }}</text></view>
+    <view v-if="libraryMode === 'search' && sourceStatus.length" class="source-status"><text v-for="s in sourceStatus" :key="s.source">{{ sourceName(s.source) }}：{{ s.error || (s.count + ' 条结果') }}</text></view>
+    <view v-if="libraryMode === 'search' && error" class="notice" role="alert">{{ error }}<button @click="search()">再试一次</button></view>
+    <view v-else-if="libraryMode === 'search' && loading && !tracks.length" class="empty" role="status">正在翻找精神补给，请稍等…</view>
+    <view v-else-if="libraryMode === 'search' && !tracks.length" class="empty">{{ searched ? '这个来源暂时没有搜索结果，试试其他关键词或切换来源。' : '输入歌名或歌手，给耳朵加个餐。' }}</view>
+    <view v-if="libraryMode === 'favorites' && favoritesLoading" class="empty">正在打开你的私藏歌单…</view>
+    <view v-else-if="libraryMode === 'favorites' && favoritesReady && !favorites.length" class="empty">还没有私藏。搜到喜欢的歌，点一下 ♡，下次直接来听。</view>
     <view class="track-list">
-      <button v-for="(track, index) in tracks" :key="trackKey(track)" class="track" :class="{active: selected && trackKey(selected) === trackKey(track)}" @click="play(index, true)">
+      <view v-for="(track, index) in visibleTracks" :key="trackKey(track)" class="track" :class="{active: selected && trackKey(selected) === trackKey(track)}">
+      <button class="track-pick" @click="play(index, true)">
         <text class="track-number">{{ selected && trackKey(selected) === trackKey(track) ? '♫' : String(index + 1).padStart(2, '0') }}</text>
         <view class="track-info"><text class="song-title">{{ track.name }}</text><text v-if="track.album" class="album">{{ track.album }}</text><text class="artist">{{ track.artist }} · {{ sourceName(track.source) }} · {{ track.version }}</text></view>
         <text v-if="track.duration > 0" class="duration">{{ duration(track.duration) }}</text><text class="play-icon">▶</text>
       </button>
+      <button class="favorite-button" :class="{ saved: isFavorite(track) }" :disabled="!favoritesReady || favoritePending.has(trackKey(track))" @click.stop="toggleFavorite(track)" :aria-label="(isFavorite(track) ? '取消收藏 ' : '收藏 ') + track.name">{{ favoritePending.has(trackKey(track)) ? '…' : isFavorite(track) ? '♥' : '♡' }}</button>
+      </view>
     </view>
-    <button v-if="more" class="load-more" :disabled="loading" @click="search(true)">{{ loading ? '正在加菜…' : '继续加菜' }}</button>
+    <button v-if="libraryMode === 'search' && more" class="load-more" :disabled="loading" @click="search(true)">{{ loading ? '正在加菜…' : '继续加菜' }}</button>
     <!-- #endif -->
     <!-- #ifndef H5 -->
     <view class="empty">精神食粮目前支持网页试玩版，请在浏览器打开食堂收听。</view>
@@ -320,7 +368,7 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
 .skip { padding: 12px; background: transparent; color: #8d6fa1; font-size: 24px; }
 .volume { display: flex; align-items: center; gap: 8px; color: #93869c; font-size: 11px; }
 .volume input { width: 90px; accent-color: #8962a5; }
-.lyrics-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 28px; padding-top: 18px; border-top: 1px solid #ded4e6; color: #9a89a4; font-size: 11px; }
+.lyrics-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; padding-top: 14px; border-top: 1px solid #ded4e6; color: #9a89a4; font-size: 11px; }
 .lyrics-heading button { margin: 0; padding: 5px 8px; font-size: 10px; border: 0; border-radius: 5px; background: #e9e0ef; color: #8c719f; }
 .lyrics-box { position: relative; height: 300px; overflow-y: auto; overscroll-behavior: contain; padding: 100px 12px; box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #d0bddf transparent; text-align: center; }
 .lyric-line { display: block; width: 100%; padding: 12px 8px; margin: 0; background: transparent; border: 0; border-radius: 6px; font-size: 17px; line-height: 1.8; white-space: normal; color: #b2a3ba; cursor: pointer; transition: color .2s; }
@@ -335,7 +383,16 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
 .player-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 12px; }
 button:disabled { opacity: .45; }
 .results-heading { display: flex; justify-content: space-between; gap: 10px; padding: 12px 22px; font-size: 12px; color: #8c9177; border-bottom: 1px solid #e7e5d9; }
-.track { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; margin: 0; padding: 15px 22px; background: transparent; border: 0; border-bottom: 1px solid #eeece1; border-radius: 0; line-height: 1.5; }
+.track { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; margin: 0; padding: 0 12px 0 0; background: transparent; border: 0; border-bottom: 1px solid #eeece1; border-radius: 0; line-height: 1.5; }
+.track-pick { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; padding: 15px 10px 15px 22px; margin: 0; border: 0; background: transparent; text-align: left; line-height: 1.5; }
+.track-pick::after, .favorite-button::after { border: 0; }
+.favorite-button { flex-shrink: 0; margin: 0; padding: 8px; color: #a68cae; font-size: 15px; border: 0; background: transparent; }
+.favorite-button.saved { color: #a66386; }
+.library-tabs { display: flex; gap: 10px; padding: 18px 22px 0; margin-bottom: 14px; }
+.library-tabs button { margin: 0; border: 1px solid #dbd0e2; border-radius: 7px; padding: 9px 16px; background: transparent; color: #8c769b; font-size: 13px; }
+.library-tabs button.chosen { background: #eee4f4; color: #74538c; font-weight: 600; }
+.favorite-notice { padding: 8px 22px 14px; color: #a16d6d; font-size: 12px; }
+.favorite-notice button { display: inline-block; margin: 0 0 0 10px; padding: 4px 8px; font-size: 11px; }
 .track:hover, .track.active { background: #eee8f4; }
 .track-number { font-size: 12px; color: #a28cb4; width: 22px; flex-shrink: 0; }
 .track-info { flex: 1; min-width: 0; }
@@ -347,5 +404,5 @@ button:disabled { opacity: .45; }
 .notice button { margin: 12px auto 0; width: 100px; }
 .load-more { margin: 18px auto; width: 150px; }
 .footer { display: block; padding: 20px; text-align: center; font-size: 11px; color: #9b9f88; }
-@media (max-width: 760px) { .hero { padding: 22px 16px; } .search-box { padding: 16px 12px 12px; gap: 6px; } .search-button { padding: 0 10px; } .track { padding: 14px 12px; gap: 9px; } .now-playing { margin: 0 12px 16px; padding: 12px; } .duration { display: none; } }
+@media (max-width: 760px) { .hero { padding: 22px 16px; } .search-box { padding: 16px 12px 12px; gap: 6px; } .search-button { padding: 0 10px; } .track { padding: 0 8px 0 0; gap: 5px; } .track-pick { padding: 14px 6px 14px 12px; gap: 9px; } .playing-heading { flex-wrap: wrap; } .library-tabs { padding: 16px 12px 0; } .now-playing { margin: 0 12px 16px; padding: 12px; } .duration { display: none; } }
 </style>

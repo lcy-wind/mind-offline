@@ -89,3 +89,12 @@ SELECT name,description,category,emoji,price FROM (VALUES
  ('精神离职毕业餐','牛肉面 + 热可可 + 甜甜圈，祝你准时下班。','离职套餐','🎓',66)
 ) AS additions(name,description,category,emoji,price)
 WHERE EXISTS(SELECT 1 FROM applied);
+
+-- Favorites belong only to Music Canteen and the signed-in food account.
+CREATE TABLE IF NOT EXISTS canteen_music_favorites (
+ account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ source text NOT NULL CHECK(source IN ('netease','joox','audius')),
+ track_id text NOT NULL, track jsonb NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(account_id, source, track_id)
+);
