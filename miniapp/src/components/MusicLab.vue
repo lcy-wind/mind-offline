@@ -35,6 +35,7 @@ function select(provider: MusicProvider | "canteen") {
   ><MusicCanteen
     v-if="active === 'canteen'"
     :key="props.accountId"
+    @auth-expired="emit('auth-expired')"
   /><MusicPanel
     v-else
     :key="props.accountId + active"
