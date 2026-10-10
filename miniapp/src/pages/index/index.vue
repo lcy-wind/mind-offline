@@ -593,14 +593,14 @@ async function saveReceipt() {
     <view class="layout">
       <view class="sidebar">
         <view class="side-title">今日营业，精神随缘。</view>
-        <view
+        <button
           class="nav-item"
           :class="{ active: tab === 'menu' }"
           @click="tab = 'menu'"
           ><text>↗</text><text>补给菜单</text
-          ><text class="nav-index">01</text></view
+          ><text class="nav-index">01</text></button
         >
-        <view
+        <button
           class="nav-item"
           :class="{ active: tab === 'orders' }"
           @click="
@@ -608,22 +608,22 @@ async function saveReceipt() {
             refresh();
           "
           ><text>≡</text><text>我的离职单</text
-          ><text class="nav-index">{{ active || "02" }}</text></view
+          ><text class="nav-index">{{ active || "02" }}</text></button
         >
-        <view
+        <button
           class="nav-item"
           :class="{ active: tab === 'music' }"
           @click="tab = 'music'"
           ><text>♫</text><text>音乐实验室</text
-          ><text class="nav-index">03</text></view
+          ><text class="nav-index">03</text></button
         >
-        <view class="nav-item" :class="{ active: tab === 'healing' }" @click="tab = 'healing'"><text>☁</text><text>精神疗愈</text><text class="nav-index">04</text></view>
-        <view
+        <button class="nav-item" :class="{ active: tab === 'healing' }" @click="tab = 'healing'"><text>☁</text><text>精神疗愈</text><text class="nav-index">04</text></button>
+        <button
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">05</text></view
+          ><text class="nav-index">05</text></button
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -1248,6 +1248,14 @@ async function saveReceipt() {
   letter-spacing: 1px;
 }
 .nav-item {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  line-height: inherit;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1258,6 +1266,7 @@ async function saveReceipt() {
   font-size: 13px;
   border-radius: 6px;
 }
+.nav-item::after { border: 0; }
 .nav-item.active {
   background: #272c25;
   color: #f8f7f0;

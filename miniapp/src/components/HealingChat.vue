@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { request, ApiError } from "../lib/api";
-import { streamHealing } from "../lib/healing-stream";
+import { streamHealing, type ChatEvent } from "../lib/healing-stream";
+// #ifdef MP-WEIXIN
+import { nativeHealing } from "../lib/healing-native";
+// #endif
 interface Role { code: string; name: string; style: string }
 interface Conversation { id: string; title: string; mbti: string; name: string; style: string; updated_at: string }
 interface Turn { id: string; user: string; assistant: string; status: string; created_at: string }
@@ -16,7 +19,8 @@ const composer = ref<HTMLTextAreaElement | null>(null);
 const follow = ref(true);
 const pickedRole = computed(() => roles.value.find(r => r.code === roleCode.value));
 let alive = true, revision = 0;
-let controller: AbortController | null = null;
+let controller: {abort(): void} | null = null;
+const messageScrollTop = ref(0);
 let stopped = false;
 function handleError(e: unknown) {
   if (e instanceof ApiError && e.status === 401) emit("auth-expired");
@@ -42,7 +46,13 @@ async function init() {
 function stop() { stopped = true; controller?.abort(); }
 async function scrollBottom() {
   await nextTick();
-  if (alive && follow.value && messages.value) messages.value.scrollTop = messages.value.scrollHeight;
+  if (!alive || !follow.value) return;
+  // #ifdef H5
+  if (messages.value) messages.value.scrollTop = messages.value.scrollHeight;
+  // #endif
+  // #ifdef MP-WEIXIN
+  messageScrollTop.value += 100000;
+  // #endif
 }
 async function openConversation(c: Conversation) {
   if (sending.value) return;
@@ -81,27 +91,37 @@ function removeConversation(c: Conversation) {
   }});
 }
 async function send(existing?: Turn) {
-  // #ifdef H5
   if (!active.value || sending.value || loading.value || !enabled.value) return;
   const text = existing?.user || draft.value.trim();
   if (!text) return;
   if ([...text].length > 4000) { error.value = "这条消息有点长，请控制在 4000 字以内。"; return; }
   const id = active.value.id, run = revision;
-  const requestID = existing?.id || crypto.randomUUID();
+  const requestID = existing?.id || Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + "-" + Math.random().toString(36).slice(2);
   let turn = existing;
   if (turn) { turn.assistant = ""; turn.status = "pending"; }
   else { turns.value.push({id:requestID,user:text,assistant:"",status:"pending",created_at:new Date().toISOString()}); turn = turns.value[turns.value.length-1]; draft.value = ""; }
   const target = turn;
   sending.value = true; error.value = ""; stopped = false; follow.value = true; scrollBottom();
+  // #ifdef H5
   if (!existing) composer.value?.focus({preventScroll: true});
-  const abort = new AbortController(); controller = abort;
+  // #endif
+  const accept = (e: ChatEvent) => {
+    if (!alive || run !== revision || active.value?.id !== id) return;
+    if (e.event === "delta") { target.assistant += e.data.text; scrollBottom(); }
+    if (e.event === "done") { target.assistant = e.data.assistant; target.status = e.data.status; scrollBottom(); }
+  };
+  let pending: {promise: Promise<void>; abort(): void};
+  // #ifdef H5
+  const webAbort = new AbortController();
+  pending = {promise: streamHealing(id,requestID,text,webAbort.signal,accept), abort: () => webAbort.abort()};
+  // #endif
+  // #ifdef MP-WEIXIN
+  pending = nativeHealing(id,requestID,text,accept);
+  // #endif
+  const abort = pending!; controller = abort;
   const timeout = setTimeout(() => abort.abort(), 100000);
   try {
-    await streamHealing(id,requestID,text,abort.signal,e => {
-      if (!alive || run !== revision || active.value?.id !== id) return;
-      if (e.event === "delta") { target.assistant += e.data.text; scrollBottom(); }
-      if (e.event === "done") { target.assistant = e.data.assistant; target.status = e.data.status; scrollBottom(); }
-    });
+    await pending!.promise;
     if (!alive || run !== revision) return;
     await list();
     const updated = conversations.value.find(c => c.id === id); if (updated) active.value = updated;
@@ -114,21 +134,21 @@ async function send(existing?: Turn) {
     if (controller === abort) controller = null;
     if (alive && run === revision) sending.value = false;
   }
-  // #endif
 }
 function editDraft(e: Event) { draft.value = (e.target as HTMLTextAreaElement).value; }
 function keyboardSend(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
 }
+function nativeScroll(e: any) {
+  // #ifdef MP-WEIXIN
+  follow.value = e.detail.scrollHeight - e.detail.scrollTop - 400 < 90;
+  // #endif
+}
 function trackScroll() {
   const box = messages.value;
   if (box) follow.value = box.scrollHeight - box.scrollTop - box.clientHeight < 90;
 }
-onMounted(() => {
-  // #ifdef H5
-  init();
-  // #endif
-});
+onMounted(init);
 onBeforeUnmount(() => { alive = false; revision++; stop(); });
 defineExpose({stop});
 </script>
@@ -136,7 +156,6 @@ defineExpose({stop});
 <template>
   <view class="healing">
     <view class="healing-hero"><text class="eyebrow">MIND OFFLINE / A LITTLE ROOM TO BREATHE</text><text class="hero-title">精神疗愈</text><text class="hero-copy">今天不解决全世界，先聊聊你。</text><text class="hero-note">MBTI 是角色风格设定。这里是 AI 陪聊，不是专业心理咨询。</text></view>
-    <!-- #ifdef H5 -->
     <view v-if="error" class="chat-error" role="alert">{{ error }}<button v-if="!ready" @click="init">重新连接</button></view>
     <view v-if="ready && !enabled" class="chat-error">聊天服务正在准备中，请稍后再来。</view>
     <view class="chat-layout">
@@ -160,7 +179,7 @@ defineExpose({stop});
         </view>
         <template v-else-if="active">
           <view class="chat-heading"><view><text class="chat-name">{{ active.name }}</text><text class="role-tag">{{ active.mbti }} · AI 聊天搭子</text></view><button :disabled="sending" class="refresh-chat" @click="openConversation(active)">刷新记录</button></view>
-          <div ref="messages" class="messages" @scroll="trackScroll">
+          <scroll-view scroll-y :scroll-top="messageScrollTop" class="message-scroll" @scroll="nativeScroll"><div ref="messages" class="messages" @scroll="trackScroll">
             <view v-if="loading" class="chat-empty">正在翻开这段聊天…</view>
             <view v-else-if="!turns.length" class="chat-empty"><text class="empty-icon">✳</text><text>这里没有标准答案。</text><text class="subtle">从一句“今天好累”，或者一个奇怪的脑洞开始吧。</text></view>
             <view v-for="turn in turns" :key="turn.id" class="turn">
@@ -169,21 +188,23 @@ defineExpose({stop});
                 <view v-if="turn.status !== 'complete'" class="turn-state"><text>{{ turn.status === 'pending' ? (sending ? '回复中…' : '上一条回复尚未完成，可刷新查看') : turn.status === 'interrupted' ? '已停止生成' : '回复未完成' }}</text><button v-if="turn.status !== 'pending'" :disabled="sending" @click="send(turn)">重试这条</button></view>
               </view>
             </view>
-          </div>
+          </div></scroll-view>
           <button v-if="!follow && sending" class="follow-button" @click="follow = true; scrollBottom()">回到最新回复 ↓</button>
           <view class="composer">
+            <!-- #ifdef H5 -->
             <component :is="'textarea'" ref="composer" class="composer-input" :value="draft" @input="editDraft" maxlength="4000" rows="3" :disabled="loading || !enabled" placeholder="说说今天的心情，或者随便聊点什么…" aria-label="聊天消息" @keydown="keyboardSend" />
-            <view class="composer-bottom"><text>{{ draft.length }}/4000 · Enter 发送，Shift+Enter 换行</text><button v-if="sending" @click="stop" class="stop-button">停止生成 ■</button><button v-else class="primary send-button" :disabled="!draft.trim() || loading || !enabled" @click="send()">发送 ↑</button></view>
+            <!-- #endif -->
+            <!-- #ifdef MP-WEIXIN -->
+            <textarea v-model="draft" class="composer-input" :maxlength="4000" :disabled="loading || !enabled" :fixed="true" :show-confirm-bar="false" :adjust-position="true" :cursor-spacing="24" placeholder="说说今天的心情，或者随便聊点什么…" />
+            <!-- #endif -->
+            <view class="composer-bottom"><text>{{ draft.length }}/4000<!-- #ifdef H5 --> · Enter 发送，Shift+Enter 换行<!-- #endif --></text><button v-if="sending" @click="stop" class="stop-button">停止生成 ■</button><button v-else class="primary send-button" :disabled="!draft.trim() || loading || !enabled" @click="send()">发送 ↑</button></view>
           </view>
           <text class="privacy-note">回复由 AI 生成。聊天内容与角色设定会发送至智谱处理；记录保存在你的食堂账号下。</text>
         </template>
         <view v-else class="chat-empty">{{ loading ? '正在准备聊天空间…' : '选择一段聊天，或新建一个角色。' }}</view>
       </view>
     </view>
-    <!-- #endif -->
-    <!-- #ifndef H5 -->
-    <view class="chat-empty">精神疗愈目前支持网页试玩版。</view>
-    <!-- #endif -->
+
   </view>
 </template>
 
@@ -240,4 +261,8 @@ defineExpose({stop});
 button:disabled { opacity: .45; }button::after { border: 0; }
 @media (max-width: 960px) { .sessions { flex-basis: 165px; } .role-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 760px) { .healing-hero { padding: 22px 16px; }.hero-title { font-size: 26px; }.chat-layout { flex-direction: column; }.sessions { flex-basis: auto; max-height: 190px; border-right: 0; border-bottom: 1px solid #e8e2ed; }.new-chat { margin-bottom: 8px; }.role-maker { padding: 20px 15px; }.role-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; }.role-grid button { font-size: 8px; }.role-code { font-size: 12px; }.messages { padding: 16px 12px; height: 400px; }.bubble { max-width: 94%; font-size: 13px; padding: 10px 13px; }.chat-heading { padding: 15px; }.composer { margin: 0 12px 10px; }.composer-bottom > text { max-width: 170px; line-height: 1.6; }.privacy-note { padding: 0 12px 15px; } }
+/* #ifdef MP-WEIXIN */
+.message-scroll { height: 400px; }
+.messages { height: auto; min-height: 400px; overflow: visible; box-sizing: border-box; }
+/* #endif */
 </style>

@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed, getCurrentInstance } from "vue";
 const props = defineProps<{ text: string; secondary: string; lineKey: string; playing: boolean }>();
 const clip = ref<HTMLDivElement | null>(null);
 const line = ref<HTMLSpanElement | null>(null);
 const overflow = ref(0);
 let observer: ResizeObserver | undefined;
 let alive = true;
+const instance = getCurrentInstance();
 function measure() {
   if (!alive) return;
+  // #ifdef H5
   overflow.value = Math.max(0, (line.value?.scrollWidth || 0) - (clip.value?.clientWidth || 0));
+  // #endif
+  // #ifdef MP-WEIXIN
+  const key = props.lineKey;
+  uni.createSelectorQuery().in(instance?.proxy).select(".lyric-clip").boundingClientRect().select(".lyric-text").boundingClientRect().exec((rects: any[]) => {
+    if (alive && key === props.lineKey) overflow.value = Math.max(0, (rects[1]?.width || 0) - (rects[0]?.width || 0));
+  });
+  // #endif
 }
 const motion = computed(() => ({
   "--lyric-shift": -overflow.value + "px",
@@ -22,10 +31,12 @@ watch(() => [props.text, props.lineKey], async () => {
 });
 onMounted(() => {
   measure();
+  // #ifdef H5
   if (typeof ResizeObserver !== "undefined" && clip.value) {
     observer = new ResizeObserver(measure);
     observer.observe(clip.value);
   }
+  // #endif
 });
 onBeforeUnmount(() => { alive = false; observer?.disconnect(); });
 </script>

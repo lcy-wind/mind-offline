@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, shallowRef } from "vue";
+import { createCanteenAudio, type CanteenAudio } from "../lib/canteen-native-audio";
 import { request, ApiError } from "../lib/api";
 import { player as platformPlayer } from "../lib/player";
 import { createQueueOrder, moveQueue, type PlayMode } from "../lib/canteen-queue";
@@ -55,7 +56,8 @@ function playAll() {
   play(start, true);
 }
 const selected = computed(() => queue.value[current.value]);
-const audio = ref<HTMLAudioElement | null>(null);
+const audio = shallowRef<HTMLAudioElement | CanteenAudio | null>(null);
+const nativeLyricTarget = computed(() => followLyrics.value && activeLine.value >= 0 ? "lyric-" + activeLine.value : "");
 const streamURL = ref("");
 const resolving = ref(false);
 const playback = ref("");
@@ -109,30 +111,42 @@ async function toggleFavorite(track: Track) {
     favoriteError.value = e instanceof Error ? e.message : "收藏保存失败，请重试";
   } finally { if (!disposed) favoritePending.value.delete(key); }
 }
-onMounted(() => { loadFavorites(); });
+onMounted(() => {
+  // #ifdef MP-WEIXIN
+  audio.value = createCanteenAudio(() => streamURL.value, event => {
+    if (event === "time") updateTime();
+    if (event === "playing") onPlaying();
+    if (event === "pause") onPause();
+    if (event === "ended") onEnded();
+    if (event === "error") onAudioError();
+    if (event === "waiting" && !resolving.value) playback.value = "音频缓冲中，耳朵稍等一下…";
+  });
+  // #endif
+  loadFavorites();
+});
 function duration(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   return Math.floor(seconds / 60) + ":" + String(Math.floor(seconds % 60)).padStart(2, "0");
 }
 
-function audioEvent(e: Event): HTMLAudioElement | null {
-  return !disposed && e.currentTarget === audio.value ? audio.value : null;
+function audioEvent(e?: Event) {
+  return !disposed && (!e || e.currentTarget === audio.value) ? audio.value : null;
 }
-function updateTime(e: Event) {
+function updateTime(e?: Event) {
   const a = audioEvent(e); if (!a) return;
   elapsed.value = Number.isFinite(a.currentTime) ? a.currentTime : 0;
   total.value = Number.isFinite(a.duration) ? a.duration : 0;
 }
-function onPlaying(e: Event) {
+function onPlaying(e?: Event) {
   if (!audioEvent(e)) return;
   isPlaying.value = true; playback.value = "正在播放 · 工作的事等会再说";
 }
-function onPause(e: Event) {
+function onPause(e?: Event) {
   if (!audioEvent(e)) return;
   isPlaying.value = false;
   if (!resolving.value) playback.value = "已暂停 · 精神休息中";
 }
-function onAudioError(e: Event) {
+function onAudioError(e?: Event) {
   if (!audioEvent(e) || resolving.value || !streamURL.value) return;
   isPlaying.value = false; playback.value = "音频暂时无法加载，可重试或换源找同曲";
 }
@@ -145,6 +159,9 @@ async function togglePlayback() {
   try { await a.play(); }
   catch { if (!disposed && run === playGeneration) playback.value = "播放暂时没跟上，可点击重试播放"; }
 }
+function nativePreviewSeek(e: {detail: {value: number}}) { dragging.value = true; dragTime.value = e.detail.value; }
+function nativeCommitSeek(e: {detail: {value: number}}) { seekTo(e.detail.value); dragging.value = false; }
+function nativeVolume(e: {detail: {value: number}}) { volume.value = e.detail.value; if (audio.value) audio.value.volume = volume.value / 100; }
 function previewSeek(e: Event) {
   dragging.value = true;
   dragTime.value = Number((e.target as HTMLInputElement).value);
@@ -162,7 +179,7 @@ function changeVolume(e: Event) {
   volume.value = Number((e.target as HTMLInputElement).value);
   if (audio.value) audio.value.volume = volume.value / 100;
 }
-function onEnded(e: Event) {
+function onEnded(e?: Event) {
   const a = audioEvent(e);
   if (!a) return;
   isPlaying.value = false;
@@ -190,6 +207,7 @@ async function loadLyrics(track: Track, run: number) {
     lyricStatus.value = "歌词暂时没跟上，音乐照常播放。";
   }
 }
+// #ifdef H5
 watch([activeLine, followLyrics], async () => {
   if (!followLyrics.value) return;
   await nextTick();
@@ -198,6 +216,8 @@ watch([activeLine, followLyrics], async () => {
   if (!box || !line || disposed) return;
   box.scrollTo({ top: Math.max(0, line.offsetTop - box.clientHeight / 2 + line.clientHeight / 2), behavior: "smooth" });
 });
+
+// #endif
 
 async function search(append = false) {
   libraryMode.value = "search";
@@ -234,7 +254,6 @@ function findAlternative() {
   search();
 }
 async function play(index: number, fromResults = false, preserveOrder = false) {
-  // #ifdef H5
   const nextTrack = (fromResults ? visibleTracks.value : queue.value)[index];
   if (!nextTrack) return;
   platformPlayer.reset();
@@ -242,8 +261,8 @@ async function play(index: number, fromResults = false, preserveOrder = false) {
   resolving.value = true;
   audio.value?.pause();
   audio.value?.removeAttribute("src");
-  audio.value?.load();
   streamURL.value = "";
+  audio.value?.load();
   if (fromResults) queue.value = [...visibleTracks.value];
   if (fromResults || !queueOrder.value.order.length || (!preserveOrder && index !== current.value)) {
     queueOrder.value = createQueueOrder(queue.value.length, index, playMode.value);
@@ -251,7 +270,9 @@ async function play(index: number, fromResults = false, preserveOrder = false) {
   current.value = index;
   elapsed.value = 0; total.value = 0; isPlaying.value = false; dragging.value = false;
   lyrics.value = { lines: [], plain: [] }; followLyrics.value = true;
+  // #ifdef H5
   if (lyricViewport.value) lyricViewport.value.scrollTop = 0;
+  // #endif
   void loadLyrics(nextTrack, run);
   playback.value = "正在向" + sourceName(nextTrack.source) + "取餐…";
   try {
@@ -270,7 +291,6 @@ async function play(index: number, fromResults = false, preserveOrder = false) {
     if (e instanceof ApiError && e.status === 401) emit("auth-expired");
     playback.value = (e as Error).name === "NotAllowedError" ? "点击下方播放按钮开始收听" : e instanceof Error ? e.message : "这首暂时无法播放，请换源试试";
   } finally { if (!disposed && run === playGeneration) resolving.value = false; }
-  // #endif
 }
 function step(delta: -1 | 1) {
   const next = moveQueue(queueOrder.value, delta);
@@ -283,8 +303,8 @@ function stop() {
   resolving.value = true;
   audio.value?.pause();
   audio.value?.removeAttribute("src");
-  audio.value?.load();
   streamURL.value = "";
+  audio.value?.load();
   current.value = -1;
   elapsed.value = 0; total.value = 0; isPlaying.value = false; dragging.value = false;
   lyrics.value = { lines: [], plain: [] }; lyricStatus.value = "";
@@ -314,19 +334,23 @@ const playbackState = computed(() => ({
   lyric: topLyric.value,
 }));
 defineExpose({ playbackState, togglePlayback, previous: () => step(-1), next: () => step(1), stop });
-onBeforeUnmount(() => { disposed = true; generation++; stop(); });
+onBeforeUnmount(() => {
+  disposed = true; generation++; stop();
+  // #ifdef MP-WEIXIN
+  (audio.value as CanteenAudio | null)?.destroy(); audio.value = null;
+  // #endif
+});
 </script>
 
 <template>
   <view class="canteen">
-    <view class="hero">
-      <view class="hero-top"><text class="eyebrow">MENTAL SNACKS / 耳朵补给站</text><button class="about-toggle" @click="aboutMusic = !aboutMusic">关于音乐 ⓘ</button></view>
-      <view v-if="aboutMusic" class="about-music"><text>华语接口：</text><a href="https://music.gdstudio.xyz/" target="_blank" rel="noopener noreferrer">GD音乐台(music.gdstudio.xyz)</a><text>；独立音乐来自 Audius。歌词由对应音源提供，部分歌曲可能暂缺。</text></view>
-      <text class="title">精神食粮</text>
-      <text class="subtitle">身体在工位，灵魂在打碟。</text>
-      <text class="scope">华语多源菜单 · 同一首歌，多一个选择。能否播放以音源实际返回为准。</text>
+    <view class="canteen-hero">
+      <view class="hero-top"><text class="canteen-eyebrow">MENTAL SNACKS / 耳朵补给站</text><button class="about-toggle" @click="aboutMusic = !aboutMusic">关于音乐 ⓘ</button></view>
+      <view v-if="aboutMusic" class="about-music"><text>华语接口：</text><text>GD音乐台(music.gdstudio.xyz)</text><text>；独立音乐来自 Audius。歌词由对应音源提供，部分歌曲可能暂缺。</text></view>
+      <text class="canteen-title">精神食粮</text>
+      <text class="canteen-subtitle">身体在工位，灵魂在打碟。</text>
+      <text class="canteen-scope">华语多源菜单 · 同一首歌，多一个选择。能否播放以音源实际返回为准。</text>
     </view>
-    <!-- #ifdef H5 -->
     <view class="library-tabs"><button :class="{ chosen: libraryMode === 'search' }" @click="libraryMode = 'search'">搜歌曲</button><button :class="{ chosen: libraryMode === 'favorites' }" @click="libraryMode = 'favorites'">♥ 我的收藏 {{ favoritesReady ? favorites.length : '' }}</button></view>
     <view v-if="favoriteError" class="favorite-notice" role="alert">{{ favoriteError }}<button v-if="!favoritesReady" @click="loadFavorites">重新加载收藏</button></view>
     <view v-if="libraryMode === 'search'" class="search-box">
@@ -337,11 +361,14 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
     <view v-if="selected" class="now-playing">
       <view class="playing-heading"><text class="disc">♫</text><view class="playing-info"><text class="song-title">{{ selected.name }}</text><text class="artist">{{ selected.artist }} · {{ sourceName(selected.source) }} · {{ selected.version }}</text></view><button class="favorite-button" :class="{ saved: isFavorite(selected) }" :disabled="!favoritesReady || favoritePending.has(trackKey(selected))" @click="toggleFavorite(selected)" :aria-label="isFavorite(selected) ? '取消收藏' : '收藏歌曲'">{{ isFavorite(selected) ? '♥ 已收藏' : '♡ 收藏' }}</button><button class="close" @click="stop">收餐 ×</button></view>
       <text class="play-status" role="status">{{ playback || '给精神充点电。' }}</text>
+      <!-- #ifdef H5 -->
       <audio ref="audio" :src="streamURL || undefined" preload="auto" class="audio-engine"
         @waiting="!resolving && (playback = '音频缓冲中，耳朵稍等一下…')"
         @playing="onPlaying" @pause="onPause" @error="onAudioError" @ended="onEnded"
         @timeupdate="updateTime" @loadedmetadata="updateTime" @durationchange="updateTime"></audio>
+      <!-- #endif -->
       <view class="lyrics-heading"><text>歌词 / 跟着唱也算精神离职</text><button v-if="lyrics.lines.length" @click="followLyrics = !followLyrics">{{ followLyrics ? '自动跟随 ✓' : '恢复跟随 ↕' }}</button></view>
+      <!-- #ifdef H5 -->
       <div ref="lyricViewport" class="lyrics-box" @wheel="followLyrics = false" @touchmove="followLyrics = false">
         <p v-if="lyricStatus" class="lyric-empty">{{ lyricStatus }}</p>
         <template v-else-if="lyrics.lines.length">
@@ -351,12 +378,28 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
         </template>
         <p v-for="(line, index) in lyrics.plain" v-else :key="index" class="plain-lyric">{{ line }}</p>
       </div>
+      <!-- #endif -->
+      <!-- #ifdef MP-WEIXIN -->
+      <scroll-view scroll-y scroll-with-animation :scroll-into-view="nativeLyricTarget" class="native-lyrics" @touchmove="followLyrics = false">
+        <view v-if="lyricStatus" class="lyric-empty">{{ lyricStatus }}</view>
+        <template v-else-if="lyrics.lines.length">
+          <button v-for="(line, index) in lyrics.lines" :id="'lyric-' + index" :key="index" class="lyric-line" :class="{ 'lyric-active': index === activeLine }" :disabled="!total" @click="seekTo(line.time)"><text>{{ line.text }}</text><text v-if="line.translation" class="lyric-translation">{{ line.translation }}</text></button>
+        </template>
+        <view v-for="(line, index) in lyrics.plain" v-else :key="index" class="plain-lyric">{{ line }}</view>
+        <view style="height: 90px" />
+      </scroll-view>
+      <!-- #endif -->
       <view class="timeline">
         <view class="time-labels"><text>{{ duration(displayTime) }}</text><text>{{ duration(total) }}</text></view>
+        <!-- #ifdef H5 -->
         <component :is="'input'" type="range" class="seek-slider" min="0" :max="total || 1" step="0.1"
           :value="displayTime" :disabled="!total || resolving" :style="{ '--seek': progress + '%' }"
           aria-label="播放进度" :aria-valuetext="duration(displayTime) + ' / ' + duration(total)"
           @input="previewSeek" @change="commitSeek" @blur="dragging = false" />
+        <!-- #endif -->
+        <!-- #ifdef MP-WEIXIN -->
+        <slider :min="0" :max="Math.max(1, Math.floor(total))" :step="1" :value="Math.floor(displayTime)" :disabled="!total || resolving" activeColor="#8962a5" backgroundColor="#ddd2e7" :block-size="22" @changing="nativePreviewSeek" @change="nativeCommitSeek" />
+        <!-- #endif -->
       </view>
       <view class="transport">
         <button class="skip" :disabled="!canPrevious" @click="step(-1)" aria-label="上一首">⏮</button>
@@ -364,7 +407,12 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
         <button class="skip" :disabled="!canNext" @click="step(1)" aria-label="下一首">⏭</button>
       </view>
       <view class="queue-summary">{{ modeLabel }} · 播放队列 {{ queue.length }} 首</view>
-      <view class="player-actions"><button class="mode-button" @click="cyclePlayMode" :title="modeHint">{{ modeLabel }} ↻</button><button :disabled="resolving" @click="play(current)">重试播放</button><button @click="findAlternative">换源找同曲</button><view class="volume"><text>音量</text><component :is="'input'" type="range" min="0" max="100" step="1" :value="volume" aria-label="音量" @input="changeVolume" /></view></view>
+      <view class="player-actions"><button class="mode-button" @click="cyclePlayMode" :title="modeHint">{{ modeLabel }} ↻</button><button :disabled="resolving" @click="play(current)">重试播放</button><button @click="findAlternative">换源找同曲</button><view class="volume"><text>音量</text><!-- #ifdef H5 -->
+        <component :is="'input'" type="range" min="0" max="100" step="1" :value="volume" aria-label="音量" @input="changeVolume" />
+        <!-- #endif -->
+        <!-- #ifdef MP-WEIXIN -->
+        <slider class="native-volume" :min="0" :max="100" :value="volume" :block-size="14" activeColor="#8962a5" @change="nativeVolume" />
+        <!-- #endif --></view></view>
 
     </view>
     <view class="queue-toolbar">
@@ -390,21 +438,18 @@ onBeforeUnmount(() => { disposed = true; generation++; stop(); });
       </view>
     </view>
     <button v-if="libraryMode === 'search' && more" class="load-more" :disabled="loading" @click="search(true)">{{ loading ? '正在加菜…' : '继续加菜' }}</button>
-    <!-- #endif -->
-    <!-- #ifndef H5 -->
-    <view class="empty">精神食粮目前支持网页试玩版，请在浏览器打开食堂收听。</view>
-    <!-- #endif -->
+
     <text class="footer">精神食粮不限量供应，吃饱了再假装热爱工作。</text>
   </view>
 </template>
 
 <style scoped>
 .canteen { border: 1px solid #ded7e6; border-radius: 12px; background: #faf9f2; overflow: hidden; }
-.hero { padding: 28px 24px 22px; background: #eee6f4; }
-.eyebrow { display: block; font-size: 10px; letter-spacing: 2px; color: #917aa7; }
-.title { display: block; margin: 12px 0 6px; font-size: 30px; font-weight: 700; color: #654b80; }
-.subtitle { display: block; font-size: 14px; color: #7c688f; }
-.scope { display: block; margin-top: 16px; font-size: 11px; line-height: 1.8; color: #877891; }
+.canteen-hero { padding: 28px 24px 22px; background: #eee6f4; }
+.canteen-eyebrow { display: block; font-size: 10px; letter-spacing: 2px; color: #917aa7; }
+.canteen-title { display: block; margin: 12px 0 6px; font-size: 30px; font-weight: 700; color: #654b80; }
+.canteen-subtitle { display: block; font-size: 14px; color: #7c688f; }
+.canteen-scope { display: block; margin-top: 16px; font-size: 11px; line-height: 1.8; color: #877891; }
 .search-box { display: flex; gap: 10px; padding: 22px 22px 12px; }
 .search-input { flex: 1; min-width: 0; height: 42px; padding: 0 12px; background: white; border: 1px solid #ded7e6; border-radius: 7px; font-size: 13px; }
 .search-button { margin: 0; border: 0; border-radius: 7px; background: #806096; color: white; font-size: 12px; padding: 0 16px; display: flex; align-items: center; }
@@ -483,5 +528,10 @@ button:disabled { opacity: .45; }
 .notice button { margin: 12px auto 0; width: 100px; }
 .load-more { margin: 18px auto; width: 150px; }
 .footer { display: block; padding: 20px; text-align: center; font-size: 11px; color: #9b9f88; }
-@media (max-width: 760px) { .hero { padding: 22px 16px; } .search-box { padding: 16px 12px 12px; gap: 6px; } .search-button { padding: 0 10px; } .track { padding: 0 8px 0 0; gap: 5px; } .track-pick { padding: 14px 6px 14px 12px; gap: 9px; } .playing-heading { flex-wrap: wrap; } .library-tabs { padding: 16px 12px 0; } .now-playing { margin: 0 12px 16px; padding: 12px; } .duration { display: none; } }
+@media (max-width: 760px) { .canteen-hero { padding: 22px 16px; } .search-box { padding: 16px 12px 12px; gap: 6px; } .search-button { padding: 0 10px; } .track { padding: 0 8px 0 0; gap: 5px; } .track-pick { padding: 14px 6px 14px 12px; gap: 9px; } .playing-heading { flex-wrap: wrap; } .library-tabs { padding: 16px 12px 0; } .now-playing { margin: 0 12px 16px; padding: 12px; } .duration { display: none; } }
+/* #ifdef MP-WEIXIN */
+.native-lyrics { height: 250px; text-align: center; }
+.lyric-translation { display: block; font-size: 12px; }
+.native-volume { width: 100px; }
+/* #endif */
 </style>

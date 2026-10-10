@@ -3,6 +3,7 @@ let base = HOST;
 // #ifdef H5
 base = "";
 // #endif
+export const apiBase = () => base;
 export interface Dish {
   id: number;
   name: string;
