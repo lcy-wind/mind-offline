@@ -305,15 +305,7 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "读取聊天记录失败")
 		return
 	}
-	prompt := healingPrompt(c)
-	if len(pairs) > 0 && strings.ContainsAny(pairs[0][1], "?？") {
-		prompt += "\n【这轮的节奏提醒】你上一轮已经问过问题。这轮优先回应对方刚才说的话，以陈述句自然结束，不再追加追问，除非确有安全紧急情况需要确认。"
-	}
-	messages := []healingMessage{{"system", prompt}}
-	for i := len(pairs) - 1; i >= 0; i-- {
-		messages = append(messages, healingMessage{"user", pairs[i][0]}, healingMessage{"assistant", pairs[i][1]})
-	}
-	messages = append(messages, healingMessage{"user", in.Text})
+	messages := healingMessages(c, pairs, in.Text)
 	var count int
 	if err = a.db.QueryRow(r.Context(), "SELECT count(*) FROM healing_turns WHERE conversation_id=$1", id).Scan(&count); err != nil {
 		a.internal(w, err)
