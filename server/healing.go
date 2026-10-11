@@ -305,7 +305,6 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "读取聊天记录失败")
 		return
 	}
-	messages := healingMessages(c, pairs, in.Text)
 	var count int
 	if err = a.db.QueryRow(r.Context(), "SELECT count(*) FROM healing_turns WHERE conversation_id=$1", id).Scan(&count); err != nil {
 		a.internal(w, err)
@@ -331,7 +330,7 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := ""
-	err = a.ai.stream(r.Context(), messages, func(delta string) error {
+	err = a.ai.converse(r.Context(), c, pairs, in.Text, func(delta string) error {
 		if len(text)+len(delta) > 64000 {
 			return errors.New("response too large")
 		}

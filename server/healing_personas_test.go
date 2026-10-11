@@ -34,7 +34,7 @@ func TestHealingPersonaCoverage(t *testing.T) {
 		if utf8.RuneCountInString(prompt) < 2000 {
 			t.Fatalf("profile too shallow: %s", role.Code)
 		}
-		for _, part := range []string{deep.Motivation, deep.Emotion, "聊天不是问答", "陈述句自然结束", role.Code, "角色小桥", "喜欢电影，少说教", p.Core, p.Voice, "不是真人", "不要互换"} {
+		for _, part := range []string{deep.Motivation, deep.Emotion, "聊天的方式", "不规定字数", role.Code, "角色小桥", "喜欢电影，少说教", p.Core, p.Voice, "不是真人", "名字别混淆"} {
 			if !strings.Contains(prompt, part) {
 				t.Fatalf("%s prompt missing %s", role.Code, part)
 			}

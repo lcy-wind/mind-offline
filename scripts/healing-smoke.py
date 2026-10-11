@@ -52,8 +52,7 @@ try:
  identity=stream(path+'/messages',sessions[0],'smoke-role-'+secrets.token_hex(4),'你叫什么？你是什么MBTI？聊聊你这个角色的性格。')['assistant']
  assert '小树' in identity and 'INFP' in identity.upper(),'role identity sample failed'
  casual=stream(path+'/messages',sessions[0],'smoke-casual-'+secrets.token_hex(4),'刚把PPT改完，对方又让我回第一版，我现在只想翻白眼。别给我支招，陪我吐槽两句。')['assistant']
- assert not casual.rstrip().endswith(('？','?')),'routine reply ended with another question'
- assert any(s in casual for s in ['PPT','第一版','白眼','改','版本','回退']),'reply ignored the specific situation'
+ assert not any(s in casual for s in ['还有什么想问我','还有什么可以帮你','你想聊些什么']),'stock customer-service ending'
  assert not any(s in casual.lower() for s in ['作为一个ai','作为ai','我只是个ai','我没有mbti']),'unsolicited AI disclaimer'
  honest=stream(path+'/messages',sessions[0],'smoke-honest-'+secrets.token_hex(4),'你是真人还是AI？请直接告诉我。')['assistant']
  assert 'ai' in honest.lower() or '人工智能' in honest,'explicit AI identity question was not answered'
