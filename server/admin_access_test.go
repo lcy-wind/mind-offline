@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"net/http"
 	"net/http/httptest"
@@ -103,7 +104,7 @@ func TestColeAdminIntegration(t *testing.T) {
 	c := token()
 	exec("INSERT INTO healing_conversations(id,account_id,title,mbti,name,style) VALUES($1,$2,'咖啡对话','ENFP','小桥','不要说教')", c, ids[1])
 	for i := 0; i < 23; i++ {
-		exec("INSERT INTO healing_turns(conversation_id,request_id,user_content,assistant_content,status) VALUES($1,$2,'你好 <script>','自然回复','complete')", c, token())
+		exec("INSERT INTO healing_turns(conversation_id,request_id,user_content,assistant_content,status,created_at) VALUES($1,$2,'你好 <script>','自然回复','complete','2026-01-01'::timestamptz + $3 * interval '1 minute')", c, fmt.Sprintf("turn-%02d", i), i)
 	}
 	var list struct {
 		Items []adminHealingConversation `json:"items"`
@@ -121,9 +122,13 @@ func TestColeAdminIntegration(t *testing.T) {
 		Items []healingTurn `json:"items"`
 		Total int           `json:"total"`
 	}
+	json.Unmarshal(call("GET", "/api/admin/healing/conversations/"+c, sessions[0], "", "", nil, 200).Body.Bytes(), &detail)
+	if len(detail.Items) != 20 || detail.Items[0].ID != "turn-22" || detail.Items[19].ID != "turn-03" {
+		t.Fatal("latest messages must appear first on page one")
+	}
 	raw := call("GET", "/api/admin/healing/conversations/"+c+"?page=2", sessions[0], "", "", nil, 200).Body.Bytes()
 	json.Unmarshal(raw, &detail)
-	if len(detail.Items) != 3 || detail.Total != 23 || detail.Items[0].User != "你好 <script>" {
+	if len(detail.Items) != 3 || detail.Total != 23 || detail.Items[0].User != "你好 <script>" || detail.Items[0].ID != "turn-02" || detail.Items[2].ID != "turn-00" {
 		t.Fatal("full transcript pagination broken")
 	}
 	if strings.Contains(string(raw), "private-password-hash") || strings.Contains(string(raw), sessions[1]) {
