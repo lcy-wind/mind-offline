@@ -15,7 +15,10 @@ func TestHealingDialogLive(t *testing.T) {
 		t.Skip("opt-in live dialogue evaluation")
 	}
 	ai := configureHealing()
-	model := healingBackupModel
+	model := healingModel
+	if os.Getenv("HEALING_STYLE_MODEL") == "backup" {
+		model = healingBackupModel
+	}
 	for _, role := range healingRoles {
 		if filter := os.Getenv("HEALING_STYLE_ROLE"); filter != "" && filter != "ALL" && filter != role.Code {
 			continue

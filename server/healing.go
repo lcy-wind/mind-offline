@@ -23,10 +23,9 @@ const healingBackupModel = "glm-4-flash-250414"
 const healingEndpoint = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 
 type healingAI struct {
-	key           string
-	client        *http.Client
-	slot          chan struct{}
-	fallbackUntil time.Time
+	key    string
+	client *http.Client
+	slot   chan struct{}
 }
 
 func configureHealing() *healingAI {
@@ -330,7 +329,9 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := ""
-	err = a.ai.converse(r.Context(), c, pairs, in.Text, func(delta string) error {
+	replyCtx, cancelReply := context.WithTimeout(r.Context(), 40*time.Second)
+	defer cancelReply()
+	err = a.ai.converse(replyCtx, c, pairs, in.Text, func(delta string) error {
 		if len(text)+len(delta) > 64000 {
 			return errors.New("response too large")
 		}
@@ -394,6 +395,9 @@ func (e *healingUpstreamError) Error() string {
 	return fmt.Sprintf("AI upstream status %d code %s", e.status, e.code)
 }
 func healingFailure(err error) string {
+	if errors.Is(err, errHealingFirstToken) || errors.Is(err, context.DeadlineExceeded) {
+		return "AI 响应较慢，这次等待已停止，请稍后重试"
+	}
 	var upstream *healingUpstreamError
 	if errors.As(err, &upstream) {
 		if upstream.status == 429 || upstream.status >= 500 {
@@ -409,24 +413,19 @@ func healingFailure(err error) string {
 	return "这次回复没有完成，可以稍后重试"
 }
 
-// The caller holds slot for the whole turn. Only these two documented free
-// models are allowed; account limits and content rejections never trigger fallback.
+// The caller holds slot for the whole turn. Quality-first: only the primary
+// thinking model is used; congestion never silently downgrades the conversation.
 func (c *healingAI) stream(ctx context.Context, messages []healingMessage, delta func(string) error) error {
-	if time.Now().Before(c.fallbackUntil) {
-		return c.streamModel(ctx, healingBackupModel, messages, delta)
-	}
-	err := c.streamModel(ctx, healingModel, messages, delta)
-	var upstream *healingUpstreamError
-	if errors.As(err, &upstream) && (upstream.code == "1305" || upstream.status == 502 || upstream.status == 503) {
-		c.fallbackUntil = time.Now().Add(5 * time.Minute)
-		return c.streamModel(ctx, healingBackupModel, messages, delta)
-	}
-	return err
+	return c.streamFirstToken(ctx, healingModel, messages, delta, 12*time.Second)
 }
 func (c *healingAI) streamModel(ctx context.Context, model string, messages []healingMessage, delta func(string) error) error {
+	return c.streamModelProgress(ctx, model, messages, delta, nil)
+}
+func (c *healingAI) streamModelProgress(ctx context.Context, model string, messages []healingMessage, delta func(string) error, progress func()) error {
 	payload := map[string]any{"model": model, "messages": messages, "stream": true, "max_tokens": 1500, "temperature": 0.85}
 	if model == healingModel {
-		payload["thinking"] = map[string]string{"type": "disabled"}
+		payload["thinking"] = map[string]string{"type": "enabled"}
+		payload["max_tokens"] = 4096
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, "POST", healingEndpoint, bytes.NewReader(body))
@@ -465,7 +464,8 @@ func (c *healingAI) streamModel(ctx context.Context, model string, messages []he
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					Reasoning string `json:"reasoning_content"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -478,6 +478,9 @@ func (c *healingAI) streamModel(ctx context.Context, model string, messages []he
 			return errors.New("AI stream error")
 		}
 		for _, choice := range chunk.Choices {
+			if progress != nil && (choice.Delta.Content != "" || choice.Delta.Reasoning != "") {
+				progress()
+			}
 			if choice.Delta.Content != "" {
 				if err = delta(choice.Delta.Content); err != nil {
 					return err

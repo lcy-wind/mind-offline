@@ -9,6 +9,7 @@ parser.add_argument('--case',default='')
 parser.add_argument('--role',default='')
 parser.add_argument('--dialog',action='store_true')
 parser.add_argument('--topic',action='store_true')
+parser.add_argument('--timing',action='store_true')
 args=parser.parse_args()
 root=Path(__file__).resolve().parents[1]
 ssh=['ssh','-S','/tmp/mind-offline-ssh','root@82.158.89.253']
@@ -24,4 +25,4 @@ if args.case:remote+="env['HEALING_STYLE_CASE']="+repr(args.case)+"\n"
 if args.baseline:remote+="env['HEALING_STYLE_BASELINE']='1'\n"
 if args.backup:remote+="env['HEALING_STYLE_MODEL']='backup'\n"
 remote+="os.chmod('/opt/mind-offline/qa/healing-style-eval',0o700)\nr=subprocess.run(['/opt/mind-offline/qa/healing-style-eval','-test.run','^TestHealingStyleLive$','-test.v','-test.timeout','20m'],env=env)\nraise SystemExit(r.returncode)\n"
-raise SystemExit(subprocess.run(ssh+['python3 -c '+shlex.quote(remote.replace('^TestHealingStyleLive$', '^TestHealingTopicLive$') if args.topic else remote.replace('^TestHealingStyleLive$', '^TestHealingDialogLive$') if args.dialog else remote)]).returncode)
+raise SystemExit(subprocess.run(ssh+['python3 -c '+shlex.quote(remote.replace('^TestHealingStyleLive$', '^TestHealingTimingLive$') if args.timing else remote.replace('^TestHealingStyleLive$', '^TestHealingTopicLive$') if args.topic else remote.replace('^TestHealingStyleLive$', '^TestHealingDialogLive$') if args.dialog else remote)]).returncode)

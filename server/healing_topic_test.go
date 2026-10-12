@@ -26,6 +26,10 @@ func TestHealingTopicLive(t *testing.T) {
 		t.Skip("opt-in synthetic dialogue evaluation")
 	}
 	ai := configureHealing()
+	model := healingModel
+	if os.Getenv("HEALING_STYLE_MODEL") == "backup" {
+		model = healingBackupModel
+	}
 	for _, role := range healingRoles {
 		if filter := os.Getenv("HEALING_STYLE_ROLE"); filter != "" && filter != "ALL" && filter != role.Code {
 			continue
@@ -45,7 +49,7 @@ func TestHealingTopicLive(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 				var out strings.Builder
 				err := healingConverse(ctx, c, pairs, tc.text, func(s string) error { out.WriteString(s); return nil }, func(ctx context.Context, messages []healingMessage, emit func(string) error) error {
-					return ai.streamModel(ctx, healingBackupModel, messages, emit)
+					return ai.streamModel(ctx, model, messages, emit)
 				})
 				cancel()
 				if err != nil {

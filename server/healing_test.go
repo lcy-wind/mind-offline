@@ -223,7 +223,7 @@ func (b *healingCancelBody) Read(p []byte) (int, error) {
 }
 func (b *healingCancelBody) Close() error { return nil }
 
-func TestHealingFreeModelFallback(t *testing.T) {
+func TestHealingBusyDoesNotDowngrade(t *testing.T) {
 	for _, code := range []string{"1305", "1302"} {
 		t.Run(code, func(t *testing.T) {
 			models := []string{}
@@ -244,12 +244,8 @@ func TestHealingFreeModelFallback(t *testing.T) {
 			})}}
 			var answer string
 			err := c.stream(context.Background(), []healingMessage{{"user", "hello"}}, func(s string) error { answer += s; return nil })
-			if code == "1305" {
-				if err != nil || answer != "备用回复" || len(models) != 2 || models[1] != healingBackupModel {
-					t.Fatalf("bad fallback: %v %+v", err, models)
-				}
-			} else if err == nil || len(models) != 1 {
-				t.Fatal("account limit must not trigger fallback")
+			if err == nil || len(models) != 1 || models[0] != healingModel || answer != "" {
+				t.Fatalf("busy/limited model must not downgrade: err=%v models=%v", err, models)
 			}
 		})
 	}

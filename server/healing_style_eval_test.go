@@ -19,7 +19,7 @@ func TestHealingStyleLive(t *testing.T) {
 	if ai.key == "" {
 		t.Fatal("server AI key missing")
 	}
-	models := []string{healingModel, healingBackupModel}
+	models := []string{healingModel}
 	if os.Getenv("HEALING_STYLE_MODEL") == "backup" {
 		models = []string{healingBackupModel}
 	}

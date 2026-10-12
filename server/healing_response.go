@@ -61,8 +61,8 @@ func healingFinishReply(reply, previous, text string) string {
 	return reply
 }
 
-// Hold the draft until an exact-repeat check is possible; never expose an
-// invalid draft and then silently replace text already shown to the user.
+// Hold only a prefix that could still be a copy of the previous answer.
+// Once it differs, stream immediately; never retract text already displayed.
 func (c *healingAI) converse(ctx context.Context, persona healingConversation, pairs [][2]string, text string, emit func(string) error) error {
 	return healingConverse(ctx, persona, pairs, text, emit, c.stream)
 }
@@ -77,11 +77,27 @@ func healingConverse(ctx context.Context, persona healingConversation, pairs [][
 	}
 	for attempt := 0; attempt < 2; attempt++ {
 		var buffer strings.Builder
-		if err := generate(ctx, messages, func(s string) error { buffer.WriteString(s); return nil }); err != nil {
+		streaming := false
+		previousKey := healingComparable(previous)
+		if err := generate(ctx, messages, func(s string) error {
+			if streaming {
+				return emit(s)
+			}
+			buffer.WriteString(s)
+			key := healingComparable(buffer.String())
+			if key != "" && !strings.HasPrefix(previousKey, key) {
+				streaming = true
+				return emit(buffer.String())
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
+		if streaming {
+			return nil
+		}
 		reply := healingFinishReply(buffer.String(), previous, text)
-		if healingComparable(reply) != "" && (!healingFollowup(text) || healingComparable(reply) != healingComparable(healingFinishReply(previous, previous, text))) {
+		if healingComparable(reply) != "" && healingComparable(reply) != healingComparable(healingFinishReply(previous, previous, text)) {
 			return emit(reply)
 		}
 		if attempt == 0 {

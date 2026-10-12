@@ -68,3 +68,20 @@ func TestHealingOrdinaryChatKeepsStreaming(t *testing.T) {
 		t.Fatal("ordinary chat lost incremental delivery")
 	}
 }
+
+func TestHealingNewFollowupStreamsBeforeGenerationCompletes(t *testing.T) {
+	var parts []string
+	generate := func(_ context.Context, _ []healingMessage, emit func(string) error) error {
+		if err := emit("咖啡豆"); err != nil {
+			return err
+		}
+		if len(parts) != 1 {
+			t.Fatal("new content withheld until complete")
+		}
+		return emit("是浅烘焙的。")
+	}
+	err := healingConverse(context.Background(), healingConversation{MBTI: "ENFP"}, [][2]string{{"上班了", "我有一包新咖啡豆，可以分享。"}}, "讲讲吧", func(s string) error { parts = append(parts, s); return nil }, generate)
+	if err != nil || len(parts) != 2 {
+		t.Fatal(err)
+	}
+}
