@@ -79,6 +79,33 @@ const progress = computed(() => total.value > 0 ? Math.min(100, displayTime.valu
 let generation = 0;
 let playGeneration = 0;
 let disposed = false;
+const failedTracks = new Set<string>();
+let skipTimer: ReturnType<typeof setTimeout> | undefined;
+function cancelSkip() { if (skipTimer !== undefined) clearTimeout(skipTimer); skipTimer = undefined; }
+function skipUnavailable(run: number) {
+  if (disposed || run !== playGeneration || !selected.value) return;
+  failedTracks.add(trackKey(selected.value));
+  let next = queueOrder.value;
+  for (let checked = 0; checked < queue.value.length; checked++) {
+    const moved = moveQueue(next, 1);
+    if (!moved) break;
+    next = moved;
+    const candidate = queue.value[next.order[next.position]];
+    if (candidate && !failedTracks.has(trackKey(candidate))) {
+      cancelSkip();
+      playback.value = "这首暂时无法播放，正在跳到下一首…";
+      const destination = next;
+      skipTimer = setTimeout(() => {
+        skipTimer = undefined;
+        if (disposed || run !== playGeneration) return;
+        queueOrder.value = destination;
+        void play(destination.order[destination.position], false, true, true);
+      }, 800);
+      return;
+    }
+  }
+  playback.value = "后续歌曲暂时都无法播放，可以重试或换一组歌曲。";
+}
 const sourceName = (s: string) => ({netease:"网易云",joox:"JOOX",audius:"独立音乐",all:"华语聚合"}[s] || s);
 const trackKey = (t: Track) => t.source + ":" + t.id;
 async function loadFavorites() {
@@ -148,11 +175,13 @@ function onPause(e?: Event) {
 }
 function onAudioError(e?: Event) {
   if (!audioEvent(e) || resolving.value || !streamURL.value) return;
-  isPlaying.value = false; playback.value = "音频暂时无法加载，可重试或换源找同曲";
+  isPlaying.value = false;
+  skipUnavailable(playGeneration);
 }
 async function togglePlayback() {
   const a = audio.value;
   if (!a || resolving.value) return;
+  cancelSkip();
   if (!streamURL.value || a.error) { play(current.value); return; }
   if (!a.paused) { a.pause(); return; }
   const run = playGeneration;
@@ -181,7 +210,8 @@ function changeVolume(e: Event) {
 }
 function onEnded(e?: Event) {
   const a = audioEvent(e);
-  if (!a) return;
+  if (!a || resolving.value || !streamURL.value) return;
+  cancelSkip(); failedTracks.clear();
   isPlaying.value = false;
   const next = moveQueue(queueOrder.value, 1, true);
   if (!next) { playback.value = "本轮补给结束，换首歌继续摸鱼。"; return; }
@@ -192,7 +222,7 @@ function onEnded(e?: Event) {
     a.currentTime = 0; elapsed.value = 0;
     const run = playGeneration;
     void a.play().catch(() => { if (!disposed && run === playGeneration) playback.value = "点击播放按钮，继续这一轮补给。"; });
-  } else play(index, false, true);
+  } else play(index, false, true, true);
 }
 async function loadLyrics(track: Track, run: number) {
   lyricStatus.value = "歌词正在赶来的路上…";
@@ -253,7 +283,9 @@ function findAlternative() {
   source.value = t.source === "netease" ? "joox" : "netease";
   search();
 }
-async function play(index: number, fromResults = false, preserveOrder = false) {
+async function play(index: number, fromResults = false, preserveOrder = false, automatic = false) {
+  cancelSkip();
+  if (!automatic) failedTracks.clear();
   const nextTrack = (fromResults ? visibleTracks.value : queue.value)[index];
   if (!nextTrack) return;
   platformPlayer.reset();
@@ -278,6 +310,7 @@ async function play(index: number, fromResults = false, preserveOrder = false) {
   try {
     const data = await request<{url: string}>("/canteen/playback", "POST", {id: nextTrack.id, source: nextTrack.source});
     if (disposed || run !== playGeneration) return;
+    if (!data.url) throw new Error("这首暂时没有播放地址");
     streamURL.value = data.url;
     await nextTick();
     if (disposed || run !== playGeneration || !audio.value) return;
@@ -288,8 +321,11 @@ async function play(index: number, fromResults = false, preserveOrder = false) {
     await audio.value.play();
   } catch (e) {
     if (disposed || run !== playGeneration) return;
-    if (e instanceof ApiError && e.status === 401) emit("auth-expired");
-    playback.value = (e as Error).name === "NotAllowedError" ? "点击下方播放按钮开始收听" : e instanceof Error ? e.message : "这首暂时无法播放，请换源试试";
+    if (e instanceof ApiError && e.status === 401) { emit("auth-expired"); return; }
+    const denied = (e as Error).name === "NotAllowedError";
+    playback.value = denied ? "浏览器暂停了自动播放，点播放按钮即可继续队列" : e instanceof Error ? e.message : "这首暂时无法播放";
+    // Browser permission and account-wide throttling must not skip the playlist.
+    if (!denied && !(e instanceof ApiError && (e.status === 429 || e.status === 403))) skipUnavailable(run);
   } finally { if (!disposed && run === playGeneration) resolving.value = false; }
 }
 function step(delta: -1 | 1) {
@@ -299,6 +335,7 @@ function step(delta: -1 | 1) {
   play(next.order[next.position], false, true);
 }
 function stop() {
+  cancelSkip(); failedTracks.clear();
   playGeneration++;
   resolving.value = true;
   audio.value?.pause();
