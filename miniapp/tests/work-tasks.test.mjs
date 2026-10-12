@@ -17,7 +17,7 @@ test('unfinished urgent work comes first and completed work stays below without 
  const items=[{...base,id:'done',urgency:3,status:'done'},{...base,id:'normal',urgency:2,status:'todo'},{...base,id:'urgent',urgency:3,status:'doing'}];
  assert.deepEqual(sortWorkTasks(items).map(x=>x.id),['urgent','normal','done']);assert.equal(items[0].id,'done');
 });
-const {descriptor}=parse(await readFile('src/components/WorkTasks.vue','utf8'));const script=compileScript(descriptor,{id:'work-test'});
+const {descriptor}=parse((await readFile('src/components/WorkTasks.vue','utf8')).replace("import WorkDatePicker from './WorkDatePicker.vue';",'const WorkDatePicker={};'));const script=compileScript(descriptor,{id:'work-test'});
 const bundled=await build({stdin:{contents:script.content+'\nexport {createRenderer,nextTick} from "vue";',loader:'ts',resolveDir:resolve('src/components')},bundle:true,write:false,platform:'node',format:'esm'});
 const {default:WorkTasks,createRenderer,nextTick}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));WorkTasks.render=()=>null;
 const renderer=createRenderer({createElement:()=>({}),createText:()=>({}),createComment:()=>({}),insert(){},remove(){},setText(){},setElementText(){},parentNode:()=>null,nextSibling:()=>null,patchProp(){}});
