@@ -38,6 +38,7 @@ type app struct {
 	db             *pgxpool.Pool
 	music          *musicClient
 	ai             *healingAI
+	mail           workMailSender
 	adminAccountID string
 	limits         limiter
 }
@@ -625,10 +626,15 @@ func main() {
 			log.Fatal("ADMIN_ACCOUNT_ID must identify the enabled cole account")
 		}
 	}
-	a := &app{db: db, adminAccountID: adminID, music: music, ai: configureHealing()}
+	mailer, e := configureWorkMailer()
+	if e != nil {
+		log.Fatal("invalid task reminder mail configuration")
+	}
+	a := &app{db: db, adminAccountID: adminID, music: music, ai: configureHealing(), mail: mailer}
 	autoContext, stopAutomaticOrders := context.WithCancel(context.Background())
 	defer stopAutomaticOrders()
 	go a.runAutomaticOrders(autoContext)
+	go a.runWorkReminders(autoContext)
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:18082"

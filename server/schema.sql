@@ -136,3 +136,13 @@ CREATE TABLE IF NOT EXISTS work_tasks (
  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS work_tasks_account ON work_tasks(account_id,created_at DESC);
+
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_email text NOT NULL DEFAULT '';
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_at timestamptz;
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_state text NOT NULL DEFAULT 'off' CHECK (reminder_state IN ('off','pending','sending','sent','failed','cancelled','uncertain'));
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_sent_at timestamptz;
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_error text NOT NULL DEFAULT '';
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_next_attempt timestamptz;
+ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_claimed_at timestamptz;
+CREATE INDEX IF NOT EXISTS work_reminders_due ON work_tasks(reminder_at) WHERE reminder_state='pending';

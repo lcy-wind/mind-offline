@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWorkTasksIntegration(t *testing.T) {
@@ -103,6 +104,33 @@ func TestWorkTasksIntegration(t *testing.T) {
 		{"title": "bad", "urgency": 2, "status": "todo", "planned_at": "not-a-date"},
 	} {
 		call("POST", "", sessions[0], bad, 400)
+	}
+	a.mail = fakeWorkMailer(func(context.Context, workTask) error { return nil })
+	future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	payload["status"] = "todo"
+	payload["reminder"] = map[string]any{"enabled": true, "email": "user@example.invalid", "at": future}
+	var scheduled workTask
+	json.Unmarshal(call("POST", "/"+task.ID, sessions[0], payload, 200), &scheduled)
+	if scheduled.ReminderState != "pending" || scheduled.ReminderEmail != "user@example.invalid" {
+		t.Fatal("reminder not saved")
+	}
+	delete(payload, "reminder")
+	json.Unmarshal(call("POST", "/"+task.ID, sessions[0], payload, 200), &scheduled)
+	if scheduled.ReminderState != "pending" {
+		t.Fatal("older client cleared reminder")
+	}
+	json.Unmarshal(call("POST", "/"+task.ID+"/status", sessions[0], map[string]string{"status": "done"}, 200), &scheduled)
+	if scheduled.ReminderState != "cancelled" {
+		t.Fatal("completion did not cancel email")
+	}
+	if _, err = db.Exec(ctx, "UPDATE work_tasks SET reminder_state='sending' WHERE id=$1", task.ID); err != nil {
+		t.Fatal(err)
+	}
+	call("POST", "/"+task.ID, sessions[0], payload, 409)
+	call("POST", "/"+task.ID+"/status", sessions[0], map[string]string{"status": "done"}, 409)
+	call("POST", "/"+task.ID+"/delete", sessions[0], map[string]any{}, 409)
+	if _, err = db.Exec(ctx, "UPDATE work_tasks SET reminder_state='sent' WHERE id=$1", task.ID); err != nil {
+		t.Fatal(err)
 	}
 	call("POST", "/"+task.ID+"/delete", sessions[0], map[string]any{}, 200)
 	call("POST", "/"+task.ID+"/status", sessions[0], map[string]string{"status": "todo"}, 404)
