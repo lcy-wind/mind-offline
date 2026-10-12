@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import HealingAdmin from "./HealingAdmin.vue";
+const healingAccount = ref("");
+let authEpoch=0;
 type Dish = {
   id?: number;
   name: string;
@@ -84,8 +87,8 @@ const emptyOverview = (): Overview => ({
   trend: [],
   popular: [],
 });
-const token = ref(sessionStorage.getItem("mind-offline-admin") || ""),
-  password = ref(""),
+sessionStorage.removeItem("mind-offline-admin");
+const authorized = ref(false),
   tab = ref("overview"),
   error = ref(""),
   notice = ref(""),
@@ -139,6 +142,7 @@ const labels: Record<string, string> = {
   cancelled: "已取消",
 };
 const sections = [
+  { id:"healing", icon:"☁", name:"AI 会话", en:"CONVERSATIONS" },
   { id: "overview", icon: "◈", name: "经营概览", en: "OVERVIEW" },
   { id: "orders", icon: "≡", name: "订单管理", en: "ORDERS" },
   { id: "customers", icon: "◎", name: "顾客档案", en: "CUSTOMERS" },
@@ -169,7 +173,9 @@ let orderSeq = 0,
   detailSeq = 0,
   refreshSeq = 0;
 function clearPrivate() {
-  token.value = "";
+  authEpoch++; refreshSeq++; orderSeq++; customerSeq++; detailSeq++;
+  healingAccount.value="";
+  authorized.value = false;
   sessionStorage.removeItem("mind-offline-admin");
   overview.value = emptyOverview();
   orderResult.value.items = [];
@@ -184,23 +190,24 @@ async function api<T>(
   method = "GET",
   data?: unknown,
 ): Promise<T> {
-  const captured = token.value;
+  const captured = authEpoch;
   const res = await fetch("/api" + path, {
     method,
     headers: {
       "Content-Type": "application/json",
-      Authorization: "Bearer " + captured,
+
     },
     body: data ? JSON.stringify(data) : undefined,
   });
   const out = await res.json();
-  if (captured !== token.value) throw Error("登录状态已变化，请重新操作");
+  if (captured !== authEpoch) throw Error("登录状态已变化，请重新操作");
   if (!res.ok) {
-    if (res.status === 401 && path !== "/admin/login") clearPrivate();
+    if (res.status === 401 || res.status === 403) { clearPrivate(); window.location.replace("/"); }
     throw Error(out.error || "请求失败");
   }
   return out;
 }
+function showHealing(id:string) { navigate("healing"); healingAccount.value=id; closeDetail(); }
 async function loadOrders() {
   const seq = ++orderSeq;
   const data = await api<Page<Order>>(
@@ -226,7 +233,7 @@ async function loadCustomers() {
   if (seq === customerSeq) customerResult.value = data;
 }
 async function refresh() {
-  if (!token.value) return;
+  if (!authorized.value) return;
   const seq = ++refreshSeq;
   loading.value = true;
   try {
@@ -263,6 +270,7 @@ async function refresh() {
   }
 }
 function navigate(id: string) {
+  healingAccount.value="";
   tab.value = id;
   notice.value = "";
   error.value = "";
@@ -298,24 +306,6 @@ function showOrders(status = "active") {
   orderQuery.value = "";
   navigate("orders");
 }
-async function login() {
-  if (busy.value) return;
-  busy.value = true;
-  error.value = "";
-  try {
-    const s = await api<{ token: string }>("/admin/login", "POST", {
-      password: password.value,
-    });
-    token.value = s.token;
-    sessionStorage.setItem("mind-offline-admin", s.token);
-    password.value = "";
-    await refresh();
-  } catch (e) {
-    error.value = (e as Error).message;
-  } finally {
-    busy.value = false;
-  }
-}
 async function logout() {
   if (busy.value) return;
   busy.value = true;
@@ -323,6 +313,7 @@ async function logout() {
     await api("/admin/logout", "POST");
     clearPrivate();
     error.value = "";
+    window.location.replace("/");
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -504,8 +495,15 @@ function escape(event: KeyboardEvent) {
     else closeDetail();
   }
 }
+async function verifyAccess() {
+ try { await api("/admin/me"); authorized.value=true; await refresh(); } catch(e) { clearPrivate(); window.location.replace("/"); }
+}
+function recheckAccess() {if(!document.hidden) verifyAccess();}
 onMounted(() => {
-  refresh();
+  verifyAccess();
+  document.addEventListener("visibilitychange",recheckAccess);
+  window.addEventListener("pageshow",recheckAccess);
+  window.addEventListener("pagehide",clearPrivate);
   timer = setInterval(() => {
     if (!busy.value && !loading.value && !editing.value && !document.hidden)
       refresh();
@@ -514,39 +512,15 @@ onMounted(() => {
 });
 onUnmounted(() => {
   clearInterval(timer);
+  document.removeEventListener("visibilitychange",recheckAccess);
+  window.removeEventListener("pageshow",recheckAccess);
+  window.removeEventListener("pagehide",clearPrivate);
   document.removeEventListener("keydown", escape);
 });
 </script>
 
 <template>
-  <div v-if="!token" class="login-page">
-    <div class="login-art">
-      <span class="wordmark">精神离职 / MIND OFFLINE</span>
-      <h1>店长安心摸鱼，<br /><em>餐点自动出锅。</em></h1>
-      <div class="big-symbol">✳</div>
-      <p>这里没有绩效考核，只有等待快乐的打工人。</p>
-    </div>
-    <form class="login-card" @submit.prevent="login">
-      <span class="eyebrow">STAFF ONLY / 内部通道</span>
-      <h2>欢迎回到食堂</h2>
-      <p class="muted">输入店长口令，开启今日精神补给。</p>
-      <label for="password">店长口令</label
-      ><input
-        id="password"
-        v-model="password"
-        type="password"
-        autocomplete="current-password"
-        required
-        placeholder="请输入店长口令"
-      />
-      <p v-if="error" role="alert" class="error">{{ error }}</p>
-      <button class="primary" :disabled="busy">
-        {{ busy ? "正在开门…" : "进入工作台 →" }}</button
-      ><a href="/" class="back-link">← 我是来吃饭的，回到菜单</a
-      ><small>仅模拟点餐 · 不涉及真实交易</small>
-    </form>
-  </div>
-  <div v-else class="workspace">
+  <div v-if="authorized" class="workspace">
     <aside class="sidebar">
       <a href="/" class="brand"
         ><span class="brand-tile">离</span
@@ -574,7 +548,7 @@ onUnmounted(() => {
       <a class="customer-link" href="/" target="_blank" rel="noopener"
         >打开顾客端 ↗</a
       ><button class="sidebar-logout" :disabled="busy" @click="logout">
-        退出店长账号
+        退出 cole 账号
       </button>
     </aside>
     <div class="workspace-main">
@@ -589,7 +563,7 @@ onUnmounted(() => {
           }}</span
           ><button class="outline" :disabled="loading" @click="refresh">
             {{ loading ? "更新中…" : "↻ 刷新数据" }}</button
-          ><span class="manager-avatar">店</span>
+          ><span class="manager-avatar">C</span>
         </div>
       </header>
       <main class="workspace-content">
@@ -1014,6 +988,7 @@ onUnmounted(() => {
             </div>
           </div>
         </section>
+        <HealingAdmin v-if="tab === 'healing'" :api="api" :account-id="healingAccount" :key="healingAccount" />
         <footer>
           MIND OFFLINE / 店长内部工作台
           <span>这里的流水是精神值，快乐才是硬通货。</span>
@@ -1022,7 +997,7 @@ onUnmounted(() => {
     </div>
   </div>
   <div
-    v-if="token && selectedId"
+    v-if="authorized && selectedId"
     class="drawer-backdrop"
     @click.self="!busy && closeDetail()"
   >
@@ -1066,7 +1041,8 @@ onUnmounted(() => {
               >{{ detail.customer.disabled ? "账号已停用" : "账号正常" }}</span
             >
           </div>
-          <button class="outline" :disabled="busy" @click="toggleCustomer">
+          <button class="outline" @click="showHealing(detail.customer.id)">查看 AI 会话</button>
+          <button class="outline" :disabled="busy || detail.customer.username === 'cole'" @click="toggleCustomer">
             {{ detail.customer.disabled ? "恢复账号" : "停用账号" }}
           </button>
         </div>
@@ -1209,7 +1185,7 @@ onUnmounted(() => {
     </aside>
   </div>
   <div
-    v-if="token && editing"
+    v-if="authorized && editing"
     class="overlay"
     @click.self="!busy && (editing = null)"
   >

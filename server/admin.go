@@ -170,6 +170,10 @@ func (a *app) updateCustomer(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "请填写账号状态或500字以内的备注")
 		return
 	}
+	if r.PathValue("id") == a.adminAccountID && in.Disabled != nil && *in.Disabled {
+		fail(w, 409, "不能停用唯一管理员账号")
+		return
+	}
 	ctx := r.Context()
 	tx, e := a.db.Begin(ctx)
 	if e != nil {

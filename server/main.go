@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,11 +35,11 @@ var schema string
 var assets embed.FS
 
 type app struct {
-	db            *pgxpool.Pool
-	music         *musicClient
-	ai            *healingAI
-	adminPassword string
-	limits        limiter
+	db             *pgxpool.Pool
+	music          *musicClient
+	ai             *healingAI
+	adminAccountID string
+	limits         limiter
 }
 type Dish struct {
 	ID          int    `json:"id"`
@@ -206,21 +206,6 @@ func (a *app) customer(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r.WithContext(context.WithValue(r.Context(), guestKey, id)))
 	}
 }
-func (a *app) admin(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var ok bool
-		e := a.db.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM admin_sessions WHERE token_hash=$1 AND expires_at>now())", hash(bearer(r))).Scan(&ok)
-		if e != nil {
-			a.internal(w, e)
-			return
-		}
-		if !ok {
-			fail(w, 401, "请先登录店长工作台")
-			return
-		}
-		next(w, r)
-	}
-}
 func (a *app) routes() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -259,8 +244,11 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/claim", a.customer(a.claim))
 	m.HandleFunc("GET /api/orders", a.customer(a.orders))
 	m.HandleFunc("POST /api/orders", a.customer(a.limited("order:", 30, a.createOrder)))
-	m.HandleFunc("POST /api/admin/login", a.limited("login:", 5, a.login))
-	m.HandleFunc("POST /api/admin/logout", a.admin(a.logout))
+	m.HandleFunc("POST /api/admin/session", a.customer(a.openAdminSession))
+	m.HandleFunc("GET /api/admin/me", a.admin(a.adminMe))
+	m.HandleFunc("GET /api/admin/healing/conversations", a.admin(a.adminHealingList))
+	m.HandleFunc("GET /api/admin/healing/conversations/{id}", a.admin(a.adminHealingDetail))
+	m.HandleFunc("POST /api/admin/logout", a.admin(a.adminLogout))
 	m.HandleFunc("GET /api/admin/orders", a.admin(a.adminOrders))
 	m.HandleFunc("GET /api/admin/summary", a.admin(a.summary))
 	m.HandleFunc("GET /api/admin/overview", a.admin(a.overview))
@@ -273,7 +261,8 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("PUT /api/admin/dishes/{id}", a.admin(a.saveDish))
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, 404, "接口不存在") })
 	web, _ := fs.Sub(assets, "web")
-	m.Handle("/", http.FileServer(http.FS(web)))
+	files := http.FileServer(http.FS(web))
+	m.Handle("/", files)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -288,6 +277,11 @@ func (a *app) routes() http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
+		cleanPath := path.Clean("/" + r.URL.Path)
+		if cleanPath == "/admin" || strings.HasPrefix(cleanPath, "/admin/") {
+			a.adminPage(files).ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
 		m.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -300,7 +294,7 @@ func (a *app) me(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
-	jsonOut(w, 200, map[string]any{"id": id, "username": username, "balance": balance, "claimed_today": claimed})
+	jsonOut(w, 200, map[string]any{"id": id, "username": username, "balance": balance, "claimed_today": claimed, "is_admin": id == a.adminAccountID && a.adminAccountID != ""})
 }
 func (a *app) claim(w http.ResponseWriter, r *http.Request) {
 	_, e := a.db.Exec(r.Context(), "UPDATE guests SET balance=balance+100,last_claim=(now() AT TIME ZONE 'Asia/Shanghai')::date WHERE id=$1 AND (last_claim IS NULL OR last_claim<(now() AT TIME ZONE 'Asia/Shanghai')::date)", r.Context().Value(guestKey))
@@ -471,35 +465,6 @@ func (a *app) createOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonOut(w, 201, o)
 }
-func (a *app) login(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Password string `json:"password"`
-	}
-	if !decode(w, r, &in) {
-		return
-	}
-	x, y := sha256.Sum256([]byte(in.Password)), sha256.Sum256([]byte(a.adminPassword))
-	if subtle.ConstantTimeCompare(x[:], y[:]) != 1 {
-		fail(w, 401, "店长口令不正确")
-		return
-	}
-	t := token()
-	_, e := a.db.Exec(r.Context(), "INSERT INTO admin_sessions(token_hash,expires_at) VALUES($1,now()+interval '12 hours')", hash(t))
-	if e != nil {
-		a.internal(w, e)
-		return
-	}
-	_, _ = a.db.Exec(r.Context(), "DELETE FROM admin_sessions WHERE expires_at<now()")
-	jsonOut(w, 200, map[string]string{"token": t})
-}
-func (a *app) logout(w http.ResponseWriter, r *http.Request) {
-	_, e := a.db.Exec(r.Context(), "DELETE FROM admin_sessions WHERE token_hash=$1", hash(bearer(r)))
-	if e != nil {
-		a.internal(w, e)
-		return
-	}
-	jsonOut(w, 200, map[string]bool{"ok": true})
-}
 func canTransition(from, to string) bool {
 	return (from == "pending" && (to == "cooking" || to == "cancelled")) || (from == "cooking" && (to == "ready" || to == "cancelled")) || (from == "ready" && to == "completed")
 }
@@ -621,9 +586,9 @@ func main() {
 		return
 	}
 	dsn := os.Getenv("DATABASE_URL")
-	pw := os.Getenv("ADMIN_PASSWORD")
-	if dsn == "" || len(pw) < 6 {
-		log.Fatal("DATABASE_URL and ADMIN_PASSWORD (6+ characters) are required")
+	adminID := strings.TrimSpace(os.Getenv("ADMIN_ACCOUNT_ID"))
+	if dsn == "" {
+		log.Fatal("DATABASE_URL is required")
 	}
 	cfg, e := pgxpool.ParseConfig(dsn)
 	if e != nil {
@@ -649,7 +614,13 @@ func main() {
 	if e != nil {
 		log.Fatal("invalid music service configuration")
 	}
-	a := &app{db: db, adminPassword: pw, music: music, ai: configureHealing()}
+	if adminID != "" {
+		var valid bool
+		if e = db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=$1 AND username='cole' AND NOT disabled)", adminID).Scan(&valid); e != nil || !valid {
+			log.Fatal("ADMIN_ACCOUNT_ID must identify the enabled cole account")
+		}
+	}
+	a := &app{db: db, adminAccountID: adminID, music: music, ai: configureHealing()}
 	autoContext, stopAutomaticOrders := context.WithCancel(context.Background())
 	defer stopAutomaticOrders()
 	go a.runAutomaticOrders(autoContext)

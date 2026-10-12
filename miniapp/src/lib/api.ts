@@ -14,6 +14,7 @@ export interface Dish {
   available: boolean;
 }
 export interface Guest {
+  is_admin?: boolean;
   id: string;
   username: string;
   balance: number;

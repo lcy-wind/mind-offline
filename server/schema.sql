@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS orders (
  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(guest_id,request_key)
 );
 CREATE INDEX IF NOT EXISTS orders_guest_created ON orders(guest_id,created_at DESC);
-CREATE TABLE IF NOT EXISTS admin_sessions (token_hash text PRIMARY KEY, expires_at timestamptz NOT NULL);
+-- The shared shop password and its legacy sessions are retired.
+DROP TABLE IF EXISTS admin_sessions;
 INSERT INTO dishes(id,name,description,category,emoji,price) VALUES
  (1,'周一去世拌面','把周一拌开，假装今天是周五。','续命主食','🍜',28),
  (2,'老板画的大饼','0 卡路里，100% 想象力。建议搭配现实食用。','续命主食','🫓',18),

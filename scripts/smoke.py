@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Exercise real API transactions. Requires ADMIN_PASSWORD; writes scoped cleanup SQL."""
+"""Exercise real API transactions. Requires COLE_PASSWORD; writes scoped cleanup SQL."""
 import concurrent.futures, hashlib, json, os, secrets, time, urllib.request, urllib.error
 from pathlib import Path
 base=os.environ.get('BASE_URL','http://127.0.0.1:18082').rstrip('/')
 if urllib.parse.urlparse(base).hostname in ('127.0.0.1', 'localhost'):
     urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler({})))
-password=os.environ['ADMIN_PASSWORD']
+password=os.environ['COLE_PASSWORD']
 tokens=[];account_ids=[];dish_id=None;admin_token=None
 usernames=[];customer_password=secrets.token_hex(16)
 
@@ -26,7 +26,7 @@ try:
     call('/admin/orders',status=401)
     call('/orders',status=401)
     menu=call('/menu');assert len(menu)>=9
-    admin_token=call('/admin/login','POST',{'password':password})['token']
+    admin_token=call('/auth/login','POST',{'username':'cole','password':password})['token']
     dish={'name':'自动验证专用菜','description':'测试后清理','category':'摸鱼小食','emoji':'🧪','price':28,'available':True}
     created=call('/admin/dishes','POST',dish,admin_token,201);dish_id=created['id']
     call('/guest','POST',{},status=404)
@@ -66,7 +66,7 @@ try:
     assert call('/me',token=other)['balance']==300
     forged_owner=order_payload(dish_id);forged_owner['guest_id']=account_ids[0]
     call('/orders','POST',forged_owner,other,400)
-    call('/admin/orders/'+first['id'],'PATCH',{'status':'cancelled'},other,401)
+    call('/admin/orders/'+first['id'],'PATCH',{'status':'cancelled'},other,403)
     bad=order_payload(dish_id,-1);call('/orders','POST',bad,t,400)
     forged=order_payload(dish_id);forged['items'][0]['price']=1;call('/orders','POST',forged,t,400)
     high=order_payload(dish_id,10);high['items']*=2;call('/orders','POST',high,t,409)
@@ -117,6 +117,6 @@ finally:
         assert len(aid)==64 and all(c in '0123456789abcdef' for c in aid)
         sql += [f"DELETE FROM orders WHERE guest_id='{aid}';",f"DELETE FROM accounts WHERE id='{aid}';",f"DELETE FROM guests WHERE id='{aid}';"]
     if dish_id is not None:sql.append(f'DELETE FROM dishes WHERE id={int(dish_id)};')
-    if admin_token:sql.append("DELETE FROM admin_sessions WHERE token_hash='%s';"%hashlib.sha256(admin_token.encode()).hexdigest())
+    if admin_token:sql.append("DELETE FROM customer_sessions WHERE token_hash='%s';"%hashlib.sha256(admin_token.encode()).hexdigest())
     path=Path(__file__).resolve().parents[1]/'.deploy/smoke-cleanup.sql';path.parent.mkdir(exist_ok=True)
     path.write_text('BEGIN;\n'+'\n'.join(sql)+'\nCOMMIT;\n')

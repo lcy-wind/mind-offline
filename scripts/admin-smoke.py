@@ -20,14 +20,14 @@ def no_credentials(value):
  elif isinstance(value,list):
   for v in value:no_credentials(v)
 try:
- admin=call('/admin/login','POST',{'password':os.environ['ADMIN_PASSWORD']})['token']
+ admin=call('/auth/login','POST',{'username':'cole','password':os.environ['COLE_PASSWORD']})['token']
  accounts=[]
  for _ in range(2):
   u='adminqa_'+secrets.token_hex(5)
   a=call('/auth/register','POST',{'username':u,'password':password},expected=201);accounts.append(a);ids.append(a['id'])
  a,b=accounts
  for path in ['/admin/customers','/admin/customers/'+a['id'],'/admin/order-list','/admin/overview']:
-  call(path,expected=401);call(path,t=a['token'],expected=401)
+  call(path,expected=401);call(path,t=a['token'],expected=403)
  for path in ['/admin/customers?page=-1','/admin/customers?status=unknown','/admin/order-list?page=abc','/admin/order-list?status=unknown']:
   call(path,t=admin,expected=400)
  call('/admin/customers/'+('f'*64),t=admin,expected=404)
@@ -60,7 +60,7 @@ try:
  assert 'admin_note' not in call('/me',t=a['token'])
  call('/admin/customers/'+a['id'],'PATCH',{'admin_note':'字'*501},admin,400)
  call('/admin/customers/'+a['id'],'PATCH',{'balance':9999},admin,400)
- call('/admin/customers/'+a['id'],'PATCH',{'disabled':True},b['token'],401)
+ call('/admin/customers/'+a['id'],'PATCH',{'disabled':True},b['token'],403)
  second=call('/auth/login','POST',{'username':a['username'],'password':password})
  call('/admin/customers/'+a['id'],'PATCH',{'disabled':True},admin)
  for t in [a['token'],second['token']]:call('/me',t=t,expected=401)
@@ -84,6 +84,6 @@ finally:
   assert len(aid)==64 and all(c in '0123456789abcdef' for c in aid)
   sql.extend([f"DELETE FROM orders WHERE guest_id='{aid}';",f"DELETE FROM accounts WHERE id='{aid}';",f"DELETE FROM guests WHERE id='{aid}';"])
  if dish_id:sql.append(f'DELETE FROM dishes WHERE id={int(dish_id)};')
- if admin:sql.append("DELETE FROM admin_sessions WHERE token_hash='%s';"%hashlib.sha256(admin.encode()).hexdigest())
+ if admin:sql.append("DELETE FROM customer_sessions WHERE token_hash='%s';"%hashlib.sha256(admin.encode()).hexdigest())
  path=Path(__file__).resolve().parents[1]/'.deploy/admin-smoke-cleanup.sql';path.parent.mkdir(exist_ok=True)
  path.write_text('BEGIN;\n'+'\n'.join(sql)+'\nCOMMIT;\n')

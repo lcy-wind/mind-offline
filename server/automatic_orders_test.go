@@ -30,7 +30,7 @@ func TestAutomaticOrdersIntegration(t *testing.T) {
 		db.Exec(ctx, "DELETE FROM orders WHERE guest_id=$1", owner)
 		db.Exec(ctx, "DELETE FROM accounts WHERE id=$1", owner)
 		db.Exec(ctx, "DELETE FROM guests WHERE id=$1", owner)
-		db.Exec(ctx, "DELETE FROM admin_sessions WHERE token_hash=$1", hash(admin))
+		db.Exec(ctx, "DELETE FROM customer_sessions WHERE token_hash=$1", hash(admin))
 	}()
 	if _, err = db.Exec(ctx, "INSERT INTO guests(id,token_hash) VALUES($1,$2)", owner, hash(owner)); err != nil {
 		t.Fatal(err)
@@ -39,8 +39,8 @@ func TestAutomaticOrdersIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Exec(ctx, "INSERT INTO customer_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", hash(auth), owner)
-	db.Exec(ctx, "INSERT INTO admin_sessions(token_hash,expires_at) VALUES($1,now()+interval '1 hour')", hash(admin))
-	a := &app{db: db}
+	db.Exec(ctx, "INSERT INTO customer_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", hash(admin), owner)
+	a := &app{db: db, adminAccountID: owner}
 	handler := a.routes()
 	call := func(method, path, session string, body any, status int) []byte {
 		t.Helper()

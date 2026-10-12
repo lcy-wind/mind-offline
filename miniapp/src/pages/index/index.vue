@@ -107,6 +107,16 @@ function handleFailure(e: unknown) {
   } else if (!(e instanceof ApiError && e.status === 0))
     error.value = (e as Error).message;
 }
+async function openAdmin() {
+  if (!me.value.is_admin) return;
+  // #ifdef H5
+  try { await request("/admin/session", "POST"); window.location.assign("/admin/"); }
+  catch (e) { toast((e as Error).message); }
+  // #endif
+  // #ifdef MP-WEIXIN
+  uni.navigateTo({url:"/pages/admin/index"});
+  // #endif
+}
 async function authenticate() {
   if (busy.value) return;
   authError.value = "";
@@ -575,6 +585,7 @@ async function saveReceipt() {
         ></view
       ><view class="top-right"
         ><text class="account-name">@{{ me.username }}</text
+        ><button v-if="me.is_admin" class="logout-button" @click="openAdmin">管理后台</button
         ><button class="logout-button" :disabled="busy" @click="signOut">
           退出</button
         ><text class="open-dot"></text><text>人类补给中</text
