@@ -9,7 +9,7 @@ import (
 )
 
 func healingFollowup(text string) bool {
-	for _, word := range []string{"啥", "哪", "什么", "为啥", "为什么", "怎么", "后来", "然后", "具体", "好吃", "好看"} {
+	for _, word := range []string{"啥", "哪", "什么", "为啥", "为什么", "怎么", "后来", "然后", "具体", "好吃", "好看", "分享", "讲讲", "说说", "说来听", "继续", "展开"} {
 		if strings.Contains(text, word) {
 			return true
 		}
