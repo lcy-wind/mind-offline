@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -18,18 +17,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const healingModel = "glm-4.7-flash"
-const healingBackupModel = "glm-4-flash-250414"
-const healingEndpoint = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+const healingModel = "agnes-3.0-flash"
+const healingEndpoint = "https://apihub.agnes-ai.com/v1/chat/completions"
 
 type healingAI struct {
-	key    string
-	client *http.Client
-	slot   chan struct{}
-}
-
-func configureHealing() *healingAI {
-	return &healingAI{key: strings.TrimSpace(os.Getenv("AI_API_KEY")), client: &http.Client{Timeout: 75 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, slot: make(chan struct{}, 1)}
+	key       string
+	client    *http.Client
+	slot      chan struct{}
+	endpoint  string
+	providers []*healingProvider
 }
 
 type healingRole struct {
@@ -79,7 +75,7 @@ type healingMessage struct {
 }
 
 func (a *app) healingConfig(w http.ResponseWriter, r *http.Request) {
-	jsonOut(w, 200, map[string]any{"enabled": a.ai != nil && a.ai.key != "", "roles": healingRoles})
+	jsonOut(w, 200, map[string]any{"enabled": a.ai != nil && a.ai.enabled(), "roles": healingRoles})
 }
 func (a *app) healingList(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.Query(r.Context(), "SELECT id,title,mbti,name,style,updated_at FROM healing_conversations WHERE account_id=$1 ORDER BY updated_at DESC,id LIMIT 100", r.Context().Value(guestKey))
@@ -241,7 +237,7 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	if a.ai == nil || a.ai.key == "" {
+	if a.ai == nil || !a.ai.enabled() {
 		fail(w, 503, "聊天服务还没准备好")
 		return
 	}
@@ -387,8 +383,9 @@ func healingEvent(w http.ResponseWriter, event string, data any) bool {
 }
 
 type healingUpstreamError struct {
-	status int
-	code   string
+	status     int
+	code       string
+	retryAfter time.Duration
 }
 
 func (e *healingUpstreamError) Error() string {
@@ -413,9 +410,11 @@ func healingFailure(err error) string {
 	return "这次回复没有完成，可以稍后重试"
 }
 
-// The caller holds slot for the whole turn. Quality-first: only the primary
-// thinking model is used; congestion never silently downgrades the conversation.
+// Production uses the configured provider list. A direct client is used in tests.
 func (c *healingAI) stream(ctx context.Context, messages []healingMessage, delta func(string) error) error {
+	if len(c.providers) > 0 {
+		return c.streamProviders(ctx, messages, delta)
+	}
 	return c.streamFirstToken(ctx, healingModel, messages, delta, 12*time.Second)
 }
 func (c *healingAI) streamModel(ctx context.Context, model string, messages []healingMessage, delta func(string) error) error {
@@ -423,12 +422,22 @@ func (c *healingAI) streamModel(ctx context.Context, model string, messages []he
 }
 func (c *healingAI) streamModelProgress(ctx context.Context, model string, messages []healingMessage, delta func(string) error, progress func()) error {
 	payload := map[string]any{"model": model, "messages": messages, "stream": true, "max_tokens": 1500, "temperature": 0.85}
-	if model == healingModel {
-		payload["thinking"] = map[string]string{"type": "enabled"}
+	if model == "agnes-3.0-flash" {
+		payload["chat_template_kwargs"] = map[string]bool{"enable_thinking": true}
 		payload["max_tokens"] = 4096
 	}
+	if model == "openai/gpt-oss-120b" {
+		delete(payload, "max_tokens")
+		payload["max_completion_tokens"] = 4096
+		payload["reasoning_effort"] = "medium"
+		payload["include_reasoning"] = true
+	}
+	endpoint := c.endpoint
+	if endpoint == "" {
+		endpoint = healingEndpoint
+	}
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", healingEndpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -446,7 +455,7 @@ func (c *healingAI) streamModelProgress(ctx context.Context, model string, messa
 			} `json:"error"`
 		}
 		_ = json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&failure)
-		return &healingUpstreamError{status: response.StatusCode, code: strings.Trim(string(failure.Error.Code), "\"")}
+		return &healingUpstreamError{status: response.StatusCode, code: strings.Trim(string(failure.Error.Code), "\""), retryAfter: healingRetryAfter(response.Header.Get("Retry-After"))}
 	}
 	scanner := bufio.NewScanner(io.LimitReader(response.Body, 2<<20))
 	scanner.Buffer(make([]byte, 4096), 256<<10)
@@ -464,8 +473,10 @@ func (c *healingAI) streamModelProgress(ctx context.Context, model string, messa
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					Reasoning string `json:"reasoning_content"`
+					Content       string `json:"content"`
+					Reasoning     string `json:"reasoning_content"`
+					GroqReasoning string `json:"reasoning"`
+					Refusal       string `json:"refusal"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -478,7 +489,10 @@ func (c *healingAI) streamModelProgress(ctx context.Context, model string, messa
 			return errors.New("AI stream error")
 		}
 		for _, choice := range chunk.Choices {
-			if progress != nil && (choice.Delta.Content != "" || choice.Delta.Reasoning != "") {
+			if choice.Delta.Refusal != "" || choice.FinishReason != nil && *choice.FinishReason == "content_filter" {
+				return errors.New("AI declined this response")
+			}
+			if progress != nil && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || choice.Delta.GroqReasoning != "") {
 				progress()
 			}
 			if choice.Delta.Content != "" {

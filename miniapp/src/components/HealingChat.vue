@@ -207,7 +207,7 @@ defineExpose({stop});
             <!-- #endif -->
             <view class="composer-bottom"><text>{{ draft.length }}/4000<!-- #ifdef H5 --> · Enter 发送，Shift+Enter 换行<!-- #endif --></text><button v-if="sending" @click="stop" class="stop-button">停止生成 ■</button><button v-else class="primary send-button" :disabled="!draft.trim() || loading || !enabled" @click="send()">发送 ↑</button></view>
           </view>
-          <text class="privacy-note">回复由 AI 生成。聊天内容与角色设定会发送至智谱处理；记录保存在你的食堂账号下。</text>
+          <text class="privacy-note">回复由 AI 生成，聊天记录保存在你的食堂账号下。</text>
         </template>
         <view v-else class="chat-empty">{{ loading ? '正在准备聊天空间…' : '选择一段聊天，或新建一个角色。' }}</view>
       </view>

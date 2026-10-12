@@ -222,31 +222,3 @@ func (b *healingCancelBody) Read(p []byte) (int, error) {
 	return 0, b.ctx.Err()
 }
 func (b *healingCancelBody) Close() error { return nil }
-
-func TestHealingBusyDoesNotDowngrade(t *testing.T) {
-	for _, code := range []string{"1305", "1302"} {
-		t.Run(code, func(t *testing.T) {
-			models := []string{}
-			c := &healingAI{key: "test-key", client: &http.Client{Transport: canteenTransport(func(r *http.Request) (*http.Response, error) {
-				var input map[string]any
-				json.NewDecoder(r.Body).Decode(&input)
-				model := input["model"].(string)
-				models = append(models, model)
-				status, body := 429, `{"error":{"code":"`+code+`","message":"provider busy"}}`
-				if model == healingBackupModel {
-					if input["thinking"] != nil {
-						t.Error("legacy model got unsupported thinking option")
-					}
-					status = 200
-					body = "data: {\"choices\":[{\"delta\":{\"content\":\"备用回复\"}}]}\n\ndata: [DONE]\n\n"
-				}
-				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body))}, nil
-			})}}
-			var answer string
-			err := c.stream(context.Background(), []healingMessage{{"user", "hello"}}, func(s string) error { answer += s; return nil })
-			if err == nil || len(models) != 1 || models[0] != healingModel || answer != "" {
-				t.Fatalf("busy/limited model must not downgrade: err=%v models=%v", err, models)
-			}
-		})
-	}
-}

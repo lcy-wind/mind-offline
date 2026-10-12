@@ -50,7 +50,7 @@ func TestHealingPrimaryRequestsThinkingAndKeepsAnswerStreaming(t *testing.T) {
 	c := &healingAI{client: &http.Client{Transport: canteenTransport(func(r *http.Request) (*http.Response, error) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		if payload["thinking"].(map[string]any)["type"] != "enabled" || payload["max_tokens"].(float64) < 4096 {
+		if payload["chat_template_kwargs"].(map[string]any)["enable_thinking"] != true || payload["max_tokens"].(float64) < 4096 {
 			t.Fatal("reasoning disabled or token budget too low")
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"private\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\ndata: [DONE]\n\n"))}, nil

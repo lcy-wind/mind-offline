@@ -15,14 +15,11 @@ func TestHealingStyleLive(t *testing.T) {
 	if os.Getenv("HEALING_STYLE_EVAL") != "1" {
 		t.Skip("opt-in live model evaluation")
 	}
-	ai := configureHealing()
+	ai, model := healingEvaluationClient(t)
 	if ai.key == "" {
 		t.Fatal("server AI key missing")
 	}
-	models := []string{healingModel}
-	if os.Getenv("HEALING_STYLE_MODEL") == "backup" {
-		models = []string{healingBackupModel}
-	}
+	models := []string{model}
 	cases := []struct {
 		name, text string
 	}{
