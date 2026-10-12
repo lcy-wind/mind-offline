@@ -25,12 +25,16 @@ type healingProvider struct {
 func configureHealing() *healingAI {
 	client := &http.Client{Timeout: 75 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	c := &healingAI{client: client, slot: make(chan struct{}, 1)}
+	seenKeys := map[string]bool{}
 	for _, spec := range []struct{ name, model, endpoint, env string }{
 		{"Agnes", "agnes-3.0-flash", "https://apihub.agnes-ai.com/v1/chat/completions", "AGNES_API_KEY"},
+		{"Agnes-2", "agnes-3.0-flash", "https://apihub.agnes-ai.com/v1/chat/completions", "AGNES_SECOND_API_KEY"},
 		{"Groq", "openai/gpt-oss-120b", "https://api.groq.com/openai/v1/chat/completions", "GROQ_API_KEY"},
 	} {
-		if key := strings.TrimSpace(os.Getenv(spec.env)); key != "" {
-			c.providers = append(c.providers, &healingProvider{name: spec.name, model: spec.model, ai: &healingAI{key: key, client: client, endpoint: spec.endpoint}})
+		if key := strings.TrimSpace(os.Getenv(spec.env)); key != "" && !seenKeys[key] {
+			seenKeys[key] = true
+			p := &healingProvider{name: spec.name, model: spec.model, ai: &healingAI{key: key, client: client, endpoint: spec.endpoint}}
+			c.providers = append(c.providers, p)
 		}
 	}
 	return c
@@ -60,7 +64,7 @@ func healingCanFailover(err error) bool {
 	}
 	var upstream *healingUpstreamError
 	if errors.As(err, &upstream) {
-		return upstream.status == 429 || upstream.status >= 500
+		return upstream.status == 401 || upstream.status == 429 || upstream.status >= 500
 	}
 	var network net.Error
 	return errors.As(err, &network) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errHealingFirstToken) || errors.Is(err, errHealingEmptyReply)
@@ -88,7 +92,7 @@ func (c *healingAI) streamProviders(ctx context.Context, messages []healingMessa
 		start := time.Now()
 		emitted := false
 		pending := ""
-		err := p.ai.streamFirstToken(attempt, p.model, messages, func(part string) error {
+		emit := func(part string) error {
 			// Whitespace alone must not prevent a failover or become an empty answer.
 			if !emitted {
 				pending += part
@@ -99,7 +103,8 @@ func (c *healingAI) streamProviders(ctx context.Context, messages []healingMessa
 				emitted = true
 			}
 			return delta(part)
-		}, 12*time.Second)
+		}
+		err := p.ai.streamFirstToken(attempt, p.model, messages, emit, 12*time.Second)
 		cancel()
 		if err == nil && !emitted {
 			err = errHealingEmptyReply

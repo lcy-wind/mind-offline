@@ -4,7 +4,7 @@ import argparse, shlex, subprocess
 from pathlib import Path
 parser=argparse.ArgumentParser()
 parser.add_argument('--baseline',action='store_true')
-parser.add_argument('--provider',choices=['Agnes','Groq'],default='Agnes')
+parser.add_argument('--provider',choices=['Agnes','Agnes-2','Groq'],default='Agnes')
 parser.add_argument('--case',default='')
 parser.add_argument('--role',default='')
 parser.add_argument('--dialog',action='store_true')
@@ -20,7 +20,7 @@ remote="""from pathlib import Path
 import os,subprocess
 values=dict(line.split('=',1) for line in Path('/opt/mind-offline/production.env').read_text().splitlines() if '=' in line and not line.startswith('#'))
 env=os.environ.copy();env['HEALING_STYLE_EVAL']='1'
-for name in ['AGNES_API_KEY','GROQ_API_KEY']:
+for name in ['AGNES_API_KEY','AGNES_SECOND_API_KEY','GROQ_API_KEY']:
     env[name]=values.get(name,'')
 """
 if args.qa: remote=remote.replace('/opt/mind-offline/production.env','/opt/mind-offline/qa/providers.env')

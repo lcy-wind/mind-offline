@@ -92,7 +92,7 @@ func TestHealingProviderFailureBoundaries(t *testing.T) {
 		{"refusal", 403, `{}`, 1, true},
 		{"stream refusal", 200, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"content_filter\"}]}\n\ndata: [DONE]\n\n", 1, true},
 		{"invalid", 400, `{}`, 1, true},
-		{"unauthorized", 401, `{}`, 1, true},
+		{"unauthorized", 401, `{}`, 2, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -174,5 +174,53 @@ func TestHealingAllProvidersBusy(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatal("both cooling providers should be skipped")
+	}
+}
+
+func TestHealingIndependentAgnesAccounts(t *testing.T) {
+	t.Setenv("AGNES_SECOND_API_KEY", "second-account")
+	var calls []string
+	var histories [][]healingMessage
+	c := providerTestClient(t, func(r *http.Request) (*http.Response, error) {
+		key := r.Header.Get("Authorization")
+		calls = append(calls, key)
+		var payload struct {
+			Messages []healingMessage `json:"messages"`
+		}
+		json.NewDecoder(r.Body).Decode(&payload)
+		histories = append(histories, payload.Messages)
+		if key == "Bearer agnes-test" {
+			return providerReply(429, `{}`), nil
+		}
+		return providerReply(200, providerOK), nil
+	})
+	messages := healingMessages(healingConversation{MBTI: "ENFP", Name: "小桥"}, [][2]string{{"我叫小林", "小林，早"}}, "你记得我吗")
+	for i := 0; i < 2; i++ {
+		if err := c.stream(context.Background(), messages, func(string) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(calls) != 3 || calls[0] != "Bearer agnes-test" || calls[1] != "Bearer second-account" || calls[2] != "Bearer second-account" {
+		t.Fatal("account cooldown not independent")
+	}
+	if !reflect.DeepEqual(histories[0], histories[1]) {
+		t.Fatal("second account lost context")
+	}
+	c.providers[1].mu.Lock()
+	c.providers[1].until = time.Now().Add(time.Minute)
+	c.providers[1].mu.Unlock()
+	if err := c.stream(context.Background(), messages, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 4 || calls[3] != "Bearer groq-test" {
+		t.Fatal("Groq was not used after both Agnes accounts cooled down")
+	}
+}
+func TestHealingDuplicateAccountKeyIgnored(t *testing.T) {
+	t.Setenv("AGNES_API_KEY", "same")
+	t.Setenv("AGNES_SECOND_API_KEY", "same")
+	t.Setenv("GROQ_API_KEY", "")
+	if len(configureHealing().providers) != 1 {
+		t.Fatal("duplicate key created multiple quota pools")
 	}
 }
