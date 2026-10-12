@@ -9,6 +9,7 @@ import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
 const musicForeground = ref(true);
 const healingChat = ref<InstanceType<typeof HealingChat> | null>(null);
+const healingOpened = ref(false);
 const musicLab = ref<InstanceType<typeof MusicPanel> | null>(null);
 const canteenPlayback = computed(() => musicLab.value?.canteenState);
 function openCanteenPlayer() {
@@ -31,6 +32,7 @@ const tab = ref("menu"),
   menu = ref<Dish[]>([]),
   me = ref<Guest>({ id: "", username: "", balance: 0, claimed_today: false }),
   orders = ref<Order[]>([]);
+watch(tab, value => { if (value === "healing") healingOpened.value = true; }, {flush: "sync"});
 const loading = ref(true),
   error = ref(""),
   busy = ref(false),
@@ -60,6 +62,7 @@ const hasLegacy = ref(Boolean(uni.getStorageSync("mind-offline-token")));
 let displayedToken = currentToken();
 function clearPrivateState() {
   healingChat.value?.stop();
+  healingOpened.value = false;
   musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
@@ -839,7 +842,7 @@ async function saveReceipt() {
           :foreground="musicForeground && tab === 'music'"
           @auth-expired="forgetSession"
         />
-        <HealingChat v-if="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
+        <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
         <template v-if="tab === 'about'"
           ><view class="page-heading"
             ><text class="eyebrow">EMPLOYEE SURVIVAL GUIDE</text

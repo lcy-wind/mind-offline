@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { request, ApiError } from "../lib/api";
 import { streamHealing, type ChatEvent } from "../lib/healing-stream";
 // #ifdef MP-WEIXIN
@@ -8,6 +8,7 @@ import { nativeHealing } from "../lib/healing-native";
 interface Role { code: string; name: string; style: string }
 interface Conversation { id: string; title: string; mbti: string; name: string; style: string; updated_at: string }
 interface Turn { id: string; user: string; assistant: string; status: string; created_at: string }
+const props = defineProps<{ foreground?: boolean }>();
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 const roles = ref<Role[]>([]), conversations = ref<Conversation[]>([]), turns = ref<Turn[]>([]);
 const active = ref<Conversation | null>(null);
@@ -33,10 +34,13 @@ async function list() {
 async function init() {
   error.value = ""; loading.value = true;
   try {
-    const config = await request<{enabled: boolean; roles: Role[]}>("/healing/config");
+    const [config, data] = await Promise.all([
+      request<{enabled: boolean; roles: Role[]}>("/healing/config"),
+      request<{conversations: Conversation[]}>("/healing/conversations"),
+    ]);
     if (!alive) return;
     roles.value = config.roles; enabled.value = config.enabled;
-    await list(); if (!alive) return;
+    conversations.value = data.conversations;
     ready.value = true;
     if (conversations.value.length) await openConversation(conversations.value[0]);
     else showCreate.value = true;
@@ -148,6 +152,10 @@ function trackScroll() {
   const box = messages.value;
   if (box) follow.value = box.scrollHeight - box.scrollTop - box.clientHeight < 90;
 }
+watch(() => props.foreground, foreground => {
+  if (foreground === false && sending.value) stop();
+  if (foreground) scrollBottom();
+});
 onMounted(init);
 onBeforeUnmount(() => { alive = false; revision++; stop(); });
 defineExpose({stop});
