@@ -4,6 +4,8 @@ import { orderProgress } from "../../lib/order-progress";
 import { onShow, onHide, onUnload } from "@dcloudio/uni-app";
 import MusicPanel from "../../components/MusicLab.vue";
 import HealingChat from "../../components/HealingChat.vue";
+import WorkTasks from "../../components/WorkTasks.vue";
+const workOpened = ref(false);
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
@@ -32,7 +34,7 @@ const tab = ref("menu"),
   menu = ref<Dish[]>([]),
   me = ref<Guest>({ id: "", username: "", balance: 0, claimed_today: false }),
   orders = ref<Order[]>([]);
-watch(tab, value => { if (value === "healing") healingOpened.value = true; }, {flush: "sync"});
+watch(tab, value => { if (value === "healing") healingOpened.value = true; if (value === "work") workOpened.value = true; }, {flush: "sync"});
 const loading = ref(true),
   error = ref(""),
   busy = ref(false),
@@ -63,6 +65,7 @@ let displayedToken = currentToken();
 function clearPrivateState() {
   healingChat.value?.stop();
   healingOpened.value = false;
+  workOpened.value = false;
   musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
@@ -635,12 +638,13 @@ async function saveReceipt() {
           ><text class="nav-index">03</text></button
         >
         <button class="nav-item" :class="{ active: tab === 'healing' }" @click="tab = 'healing'"><text>☁</text><text>精神疗愈</text><text class="nav-index">04</text></button>
+        <button class="nav-item" :class="{ active: tab === 'work' }" @click="tab = 'work'"><text>▤</text><text>牛马痛苦区</text><text class="nav-index">05</text></button>
         <button
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">05</text></button
+          ><text class="nav-index">06</text></button
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -854,6 +858,7 @@ async function saveReceipt() {
           @auth-expired="forgetSession"
         />
         <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
+        <WorkTasks v-if="me.id && workOpened" v-show="tab === 'work'" :key="me.id" :foreground="tab === 'work'" @auth-expired="forgetSession" />
         <template v-if="tab === 'about'"
           ><view class="page-heading"
             ><text class="eyebrow">EMPLOYEE SURVIVAL GUIDE</text

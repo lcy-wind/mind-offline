@@ -124,3 +124,15 @@ WHERE auto_started_at IS NULL AND status IN ('pending','cooking','ready');
 ALTER TABLE orders ALTER COLUMN auto_started_at SET DEFAULT now();
 CREATE INDEX IF NOT EXISTS orders_automatic_active ON orders(auto_started_at)
  WHERE status IN ('pending','cooking','ready');
+
+CREATE TABLE IF NOT EXISTS work_tasks (
+ id text PRIMARY KEY,
+ account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ title text NOT NULL CHECK (char_length(title) BETWEEN 1 AND 120),
+ planned_at timestamptz,
+ urgency integer NOT NULL DEFAULT 2 CHECK (urgency BETWEEN 1 AND 3),
+ status text NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','doing','done')),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS work_tasks_account ON work_tasks(account_id,created_at DESC);
