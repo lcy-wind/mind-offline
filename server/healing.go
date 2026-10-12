@@ -432,6 +432,14 @@ func (c *healingAI) streamModelProgress(ctx context.Context, model string, messa
 		payload["reasoning_effort"] = "medium"
 		payload["include_reasoning"] = true
 	}
+	if c.endpoint == "https://openrouter.ai/api/v1/chat/completions" {
+		if model != "dots-studio/dots-3-note-preview:free" {
+			return errors.New("unapproved OpenRouter model")
+		}
+		payload["max_tokens"] = 4096
+		payload["reasoning"] = map[string]any{"enabled": true}
+		payload["provider"] = map[string]any{"max_price": map[string]int{"prompt": 0, "completion": 0, "request": 0, "image": 0}}
+	}
 	endpoint := c.endpoint
 	if endpoint == "" {
 		endpoint = healingEndpoint
@@ -473,10 +481,11 @@ func (c *healingAI) streamModelProgress(ctx context.Context, model string, messa
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content       string `json:"content"`
-					Reasoning     string `json:"reasoning_content"`
-					GroqReasoning string `json:"reasoning"`
-					Refusal       string `json:"refusal"`
+					Content          string          `json:"content"`
+					Reasoning        string          `json:"reasoning_content"`
+					GroqReasoning    string          `json:"reasoning"`
+					ReasoningDetails json.RawMessage `json:"reasoning_details"`
+					Refusal          string          `json:"refusal"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -492,7 +501,7 @@ func (c *healingAI) streamModelProgress(ctx context.Context, model string, messa
 			if choice.Delta.Refusal != "" || choice.FinishReason != nil && *choice.FinishReason == "content_filter" {
 				return errors.New("AI declined this response")
 			}
-			if progress != nil && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || choice.Delta.GroqReasoning != "") {
+			if progress != nil && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || choice.Delta.GroqReasoning != "" || len(choice.Delta.ReasoningDetails) > 2 && string(choice.Delta.ReasoningDetails) != "null") {
 				progress()
 			}
 			if choice.Delta.Content != "" {

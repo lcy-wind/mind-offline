@@ -85,3 +85,30 @@ func TestHealingNewFollowupStreamsBeforeGenerationCompletes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHealingCompactAcrossStreamBoundaries(t *testing.T) {
+	input := "\r\n早呀。\r\n \t\r\n\r\n今天吃面。\n\n  1. 留着步骤\n  2. 不删内容\n\n"
+	want := "早呀。\n今天吃面。\n  1. 留着步骤\n  2. 不删内容"
+	runes := []rune(input)
+	for split := 0; split <= len(runes); split++ {
+		var got strings.Builder
+		emit := healingCompactEmitter(func(s string) error { got.WriteString(s); return nil })
+		if err := emit(string(runes[:split])); err != nil {
+			t.Fatal(err)
+		}
+		if err := emit(string(runes[split:])); err != nil {
+			t.Fatal(err)
+		}
+		if got.String() != want {
+			t.Fatalf("split %d: %q", split, got.String())
+		}
+	}
+	var got strings.Builder
+	emit := healingCompactEmitter(func(s string) error { got.WriteString(s); return nil })
+	for _, r := range runes {
+		emit(string(r))
+	}
+	if got.String() != want {
+		t.Fatal(got.String())
+	}
+}

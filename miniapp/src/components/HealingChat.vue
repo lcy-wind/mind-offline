@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatHealingReply } from "../lib/healing-text";
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { request, ApiError } from "../lib/api";
 import { streamHealing, type ChatEvent } from "../lib/healing-stream";
@@ -192,7 +193,7 @@ defineExpose({stop});
             <view v-else-if="!turns.length" class="chat-empty"><text class="empty-icon">✳</text><text>这里没有标准答案。</text><text class="subtle">从一句“今天好累”，或者一个奇怪的脑洞开始吧。</text></view>
             <view v-for="turn in turns" :key="turn.id" class="turn">
               <view class="message user"><text class="message-label">你</text><text class="bubble">{{ turn.user }}</text></view>
-              <view class="message assistant"><text class="message-label">{{ active.name }}</text><text class="bubble">{{ turn.assistant || (turn.status === 'pending' ? '正在组织语言…' : '这条回复还没完成。') }}<text v-if="turn.status === 'pending' && sending" class="typing-dot"> ▍</text></text>
+              <view class="message assistant"><text class="message-label">{{ active.name }}</text><text class="bubble">{{ formatHealingReply(turn.assistant) || (turn.status === 'pending' ? '正在组织语言…' : '这条回复还没完成。') }}<text v-if="turn.status === 'pending' && sending" class="typing-dot"> ▍</text></text>
                 <view v-if="turn.status !== 'complete'" class="turn-state"><text>{{ turn.status === 'pending' ? (sending ? '回复中…' : '上一条回复尚未完成，可刷新查看') : turn.status === 'interrupted' ? '已停止生成' : '回复未完成' }}</text><button v-if="turn.status !== 'pending'" :disabled="sending" @click="send(turn)">重试这条</button></view>
               </view>
             </view>

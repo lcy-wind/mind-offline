@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -67,6 +68,7 @@ func (c *healingAI) converse(ctx context.Context, persona healingConversation, p
 	return healingConverse(ctx, persona, pairs, text, emit, c.stream)
 }
 func healingConverse(ctx context.Context, persona healingConversation, pairs [][2]string, text string, emit func(string) error, generate func(context.Context, []healingMessage, func(string) error) error) error {
+	emit = healingCompactEmitter(emit)
 	previous := ""
 	if len(pairs) > 0 {
 		previous = pairs[0][1]
@@ -105,4 +107,35 @@ func healingConverse(ctx context.Context, persona healingConversation, pairs [][
 		}
 	}
 	return errors.New("这次没接上你的话，请重试一下")
+}
+
+// Normalize whitespace across SSE chunks without waiting for the whole reply.
+// Preserve a single line break and indentation, but never emit empty lines.
+var healingBlankLines = regexp.MustCompile(`[ \t]*\n(?:[ \t]*\n)+`)
+
+func healingCompactEmitter(emit func(string) error) func(string) error {
+	started := false
+	var pending strings.Builder
+	return func(chunk string) error {
+		var out strings.Builder
+		for _, r := range chunk {
+			if unicode.IsSpace(r) {
+				if r == '\r' {
+					r = '\n'
+				}
+				pending.WriteRune(r)
+				continue
+			}
+			if started && pending.Len() > 0 {
+				out.WriteString(healingBlankLines.ReplaceAllString(pending.String(), "\n"))
+			}
+			pending.Reset()
+			started = true
+			out.WriteRune(r)
+		}
+		if out.Len() == 0 {
+			return nil
+		}
+		return emit(out.String())
+	}
 }

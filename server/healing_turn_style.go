@@ -12,7 +12,7 @@ func healingMessages(c healingConversation, pairs [][2]string, text string) []he
 	for i := len(pairs) - 1; i >= 0; i-- {
 		messages = append(messages, healingMessage{"user", pairs[i][0]}, healingMessage{"assistant", pairs[i][1]})
 	}
-	direction := "用角色自己的口吻自然接话，长短由内容决定。别编天气或新闻，不写祝福稿，不重复上一句；虚构的角色日常也要前后连贯。"
+	direction := "代入角色直接接话，长短由内容决定；普通闲聊只接眼前这一小步，回答到位、够对方接话就停。不要自动补一段生活故事、解释、感悟或建议；用户真的追问细节或要求展开，再充分说明。简洁不等于冷淡或只回一个词，语气仍要有角色个性。不空行，不追加总结或服务式问句。别编天气或新闻，不写祝福稿，不重复上一句；虚构的角色日常也要前后连贯。"
 	if len(pairs) > 0 {
 		recent, _ := json.Marshal(map[string]string{"对方上一轮说": pairs[0][0], "你上一轮实际回复": pairs[0][1]})
 		direction += "\n最近一轮原文：" + string(recent) + `

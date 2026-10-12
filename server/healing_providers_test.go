@@ -224,3 +224,42 @@ func TestHealingDuplicateAccountKeyIgnored(t *testing.T) {
 		t.Fatal("duplicate key created multiple quota pools")
 	}
 }
+
+func TestHealingOpenRouterLastAndFreeOnly(t *testing.T) {
+	t.Setenv("AGNES_API_KEY", "a")
+	t.Setenv("AGNES_SECOND_API_KEY", "b")
+	t.Setenv("GROQ_API_KEY", "c")
+	t.Setenv("OPENROUTER_API_KEY", "d")
+	c := configureHealing()
+	if len(c.providers) != 4 || c.providers[3].name != "OpenRouter" {
+		t.Fatal("wrong fallback order")
+	}
+	for _, p := range c.providers {
+		p.ai.client = &http.Client{Transport: canteenTransport(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Host != "openrouter.ai" {
+				return providerReply(429, `{}`), nil
+			}
+			var payload map[string]any
+			json.NewDecoder(r.Body).Decode(&payload)
+			if payload["model"] != "dots-studio/dots-3-note-preview:free" || payload["models"] != nil || payload["plugins"] != nil {
+				t.Fatal("unapproved paid/automatic model or plugin")
+			}
+			max := payload["provider"].(map[string]any)["max_price"].(map[string]any)
+			for _, k := range []string{"prompt", "completion", "request", "image"} {
+				if max[k] != float64(0) {
+					t.Fatal("nonzero price ceiling")
+				}
+			}
+			if payload["reasoning"].(map[string]any)["enabled"] != true {
+				t.Fatal("reasoning missing")
+			}
+			return providerReply(200, providerOK), nil
+		})}
+	}
+	if err := c.stream(context.Background(), nil, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.providers[3].ai.streamModel(context.Background(), "paid-model", nil, func(string) error { return nil }); err == nil {
+		t.Fatal("unapproved model reached API")
+	}
+}

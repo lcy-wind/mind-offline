@@ -30,6 +30,7 @@ func configureHealing() *healingAI {
 		{"Agnes", "agnes-3.0-flash", "https://apihub.agnes-ai.com/v1/chat/completions", "AGNES_API_KEY"},
 		{"Agnes-2", "agnes-3.0-flash", "https://apihub.agnes-ai.com/v1/chat/completions", "AGNES_SECOND_API_KEY"},
 		{"Groq", "openai/gpt-oss-120b", "https://api.groq.com/openai/v1/chat/completions", "GROQ_API_KEY"},
+		{"OpenRouter", "dots-studio/dots-3-note-preview:free", "https://openrouter.ai/api/v1/chat/completions", "OPENROUTER_API_KEY"},
 	} {
 		if key := strings.TrimSpace(os.Getenv(spec.env)); key != "" && !seenKeys[key] {
 			seenKeys[key] = true
