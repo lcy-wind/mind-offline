@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import HealingAdmin from "./HealingAdmin.vue";
+import WorkAdmin from "./WorkAdmin.vue";
+const workAccount=ref("");
 const healingAccount = ref("");
 let authEpoch=0;
 type Dish = {
@@ -142,6 +144,7 @@ const labels: Record<string, string> = {
   cancelled: "已取消",
 };
 const sections = [
+  {id:"work",icon:"▤",name:"顾客工作记录",en:"WORK RECORDS"},
   { id:"healing", icon:"☁", name:"AI 会话", en:"CONVERSATIONS" },
   { id: "overview", icon: "◈", name: "经营概览", en: "OVERVIEW" },
   { id: "orders", icon: "≡", name: "订单管理", en: "ORDERS" },
@@ -174,7 +177,7 @@ let orderSeq = 0,
   refreshSeq = 0;
 function clearPrivate() {
   authEpoch++; refreshSeq++; orderSeq++; customerSeq++; detailSeq++;
-  healingAccount.value="";
+  healingAccount.value=""; workAccount.value="";
   authorized.value = false;
   sessionStorage.removeItem("mind-offline-admin");
   overview.value = emptyOverview();
@@ -206,6 +209,15 @@ async function api<T>(
     throw Error(out.error || "请求失败");
   }
   return out;
+}
+function showWork(id:string){navigate("work");workAccount.value=id;closeDetail();}
+async function downloadWorkReport(path:string,filename:string){
+ const epoch=authEpoch;
+ const res=await fetch('/api'+path);
+ if(epoch!==authEpoch)throw Error('登录状态已变化，请重新操作');
+ if(!res.ok){if(res.status===401||res.status===403){clearPrivate();window.location.replace('/');}const body=await res.json().catch(()=>({}));throw Error(body.error||'导出失败');}
+ const blob=await res.blob();if(epoch!==authEpoch)throw Error('登录状态已变化，请重新操作');
+ const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
 function showHealing(id:string) { navigate("healing"); healingAccount.value=id; closeDetail(); }
 async function loadOrders() {
@@ -270,7 +282,7 @@ async function refresh() {
   }
 }
 function navigate(id: string) {
-  healingAccount.value="";
+  healingAccount.value=""; workAccount.value="";
   tab.value = id;
   notice.value = "";
   error.value = "";
@@ -988,6 +1000,7 @@ onUnmounted(() => {
             </div>
           </div>
         </section>
+        <WorkAdmin v-if="tab === 'work'" :api="api" :download="downloadWorkReport" :account-id="workAccount" :key="workAccount" />
         <HealingAdmin v-if="tab === 'healing'" :api="api" :account-id="healingAccount" :key="healingAccount" />
         <footer>
           MIND OFFLINE / 店长内部工作台
@@ -1041,6 +1054,7 @@ onUnmounted(() => {
               >{{ detail.customer.disabled ? "账号已停用" : "账号正常" }}</span
             >
           </div>
+          <button class="outline" @click="showWork(detail.customer.id)">查看工作记录</button>
           <button class="outline" @click="showHealing(detail.customer.id)">查看 AI 会话</button>
           <button class="outline" :disabled="busy || detail.customer.username === 'cole'" @click="toggleCustomer">
             {{ detail.customer.disabled ? "恢复账号" : "停用账号" }}

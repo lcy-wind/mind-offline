@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {parse,compileScript} from '@vue/compiler-sfc';
 import {build} from 'esbuild';
-const source=(await readFile('../admin/src/App.vue','utf8')).replace('import HealingAdmin from "./HealingAdmin.vue";','const HealingAdmin={};');
+const source=(await readFile('../admin/src/App.vue','utf8')).replace('import HealingAdmin from "./HealingAdmin.vue";','const HealingAdmin={};').replace('import WorkAdmin from "./WorkAdmin.vue";','const WorkAdmin={};');
 const {descriptor}=parse(source);
 const script=compileScript(descriptor,{id:'admin-access-test'});
 const bundled=await build({stdin:{contents:script.content+'\nexport {createRenderer,nextTick} from "vue";',loader:'ts',resolveDir:resolve('src/components')},bundle:true,write:false,platform:'node',format:'esm'});
