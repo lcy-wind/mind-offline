@@ -41,6 +41,7 @@ type app struct {
 	mail           workMailSender
 	adminAccountID string
 	limits         limiter
+	lobby          lobbyHub
 }
 type Dish struct {
 	ID          int    `json:"id"`
@@ -240,6 +241,15 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("GET /api/healing/conversations/{id}", a.customer(a.healingDetail))
 	m.HandleFunc("POST /api/healing/conversations/{id}/delete", a.customer(a.healingDelete))
 	m.HandleFunc("POST /api/healing/conversations/{id}/messages", a.customer(a.healingSend))
+	m.HandleFunc("GET /api/lobby/events", a.customer(a.lobbyStream))
+	m.HandleFunc("GET /api/lobby/messages", a.customer(a.lobbyMessages))
+	m.HandleFunc("GET /api/admin/lobby/mutes", a.admin(a.lobbyMutes))
+	m.HandleFunc("GET /api/lobby/state", a.customer(a.lobbyState))
+	m.HandleFunc("POST /api/lobby/read", a.customer(a.lobbyRead))
+	m.HandleFunc("POST /api/lobby/messages", a.customer(a.lobbySend))
+	m.HandleFunc("POST /api/lobby/messages/{id}/retract", a.customer(a.lobbyRetract))
+	m.HandleFunc("POST /api/lobby/messages/{id}/reaction", a.customer(a.lobbyReaction))
+	m.HandleFunc("POST /api/lobby/messages/{id}/moderate", a.admin(a.lobbyModerate))
 	m.HandleFunc("GET /api/slim", a.customer(a.slimList))
 	m.HandleFunc("POST /api/slim/profile", a.customer(a.slimSaveProfile))
 	m.HandleFunc("POST /api/slim/entries", a.customer(a.slimSave))
@@ -288,6 +298,10 @@ func (a *app) routes() http.Handler {
 		if r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/api/healing/conversations/") && strings.HasSuffix(r.URL.Path, "/messages") {
 			timeout = 90 * time.Second
 			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(95 * time.Second))
+		}
+		if r.URL.Path == "/api/lobby/events" && r.Method == "GET" {
+			timeout = 4 * time.Minute
+			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(245 * time.Second))
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()

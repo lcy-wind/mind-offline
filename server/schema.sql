@@ -160,3 +160,22 @@ CREATE TABLE IF NOT EXISTS slim_entries (
  created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(account_id,id)
 );
 CREATE INDEX IF NOT EXISTS slim_entries_owner_day ON slim_entries(account_id,day DESC,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS lobby_members (
+ account_id text PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ last_read bigint NOT NULL DEFAULT 0, muted_until timestamptz
+);
+CREATE TABLE IF NOT EXISTS lobby_messages (
+ id bigserial PRIMARY KEY, account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ request_id text NOT NULL, content text NOT NULL,
+ status text NOT NULL DEFAULT 'active' CHECK(status IN ('active','retracted','removed')),
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS lobby_messages_owner ON lobby_messages(account_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS lobby_reactions (
+ message_id bigint NOT NULL REFERENCES lobby_messages(id) ON DELETE CASCADE,
+ account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ emoji text NOT NULL CHECK(emoji IN ('🐟','😂','＋1')),
+ PRIMARY KEY(message_id,account_id,emoji)
+);

@@ -8,6 +8,10 @@ import WorkTasks from "../../components/WorkTasks.vue";
 const workOpened = ref(false);
 import SlimLab from "../../components/SlimLab.vue";
 const slimOpened = ref(false);
+// #ifdef H5
+import LobbyHall from "../../components/LobbyHall.vue";
+// #endif
+const lobbyUnread = ref(0);
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
@@ -69,6 +73,7 @@ function clearPrivateState() {
   healingOpened.value = false;
   workOpened.value = false;
   slimOpened.value = false;
+  lobbyUnread.value = 0;
   musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
@@ -643,12 +648,15 @@ async function saveReceipt() {
         <button class="nav-item" :class="{ active: tab === 'healing' }" @click="tab = 'healing'"><text>☁</text><text>精神疗愈</text><text class="nav-index">04</text></button>
         <button class="nav-item" :class="{ active: tab === 'work' }" @click="tab = 'work'"><text>▤</text><text>牛马痛苦区</text><text class="nav-index">05</text></button>
         <button class="nav-item" :class="{ active: tab === 'slim' }" @click="tab = 'slim'"><text>⚖</text><text>瘦瘦研究所</text><text class="nav-index">06</text></button>
+        <!-- #ifdef H5 -->
+        <button class="nav-item" :class="{active:tab==='lobby'}" @click="tab='lobby'"><text>🐟</text><text>摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text v-else class="nav-index">07</text></button>
+        <!-- #endif -->
         <button
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">07</text></button
+          ><text class="nav-index">08</text></button
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -862,6 +870,9 @@ async function saveReceipt() {
           @auth-expired="forgetSession"
         />
         <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
+        <!-- #ifdef H5 -->
+        <LobbyHall v-if="me.id" v-show="tab==='lobby'" :key="me.id" :me="me" :foreground="tab==='lobby'" @auth-expired="forgetSession" @unread="lobbyUnread=$event"/>
+        <!-- #endif -->
         <SlimLab v-if="me.id && slimOpened" v-show="tab === 'slim'" :key="me.id" :foreground="tab === 'slim'" @auth-expired="forgetSession" />
         <WorkTasks v-if="me.id && workOpened" v-show="tab === 'work'" :key="me.id" :foreground="tab === 'work'" @auth-expired="forgetSession" />
         <template v-if="tab === 'about'"
@@ -2452,6 +2463,7 @@ async function saveReceipt() {
     font-size: 12px;
   }
 }
+.lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 </style>
 
 <style>
@@ -2465,6 +2477,7 @@ async function saveReceipt() {
     font-size: 14px;
   }
 }
+.lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 </style>
 
 <style>
@@ -2474,6 +2487,7 @@ async function saveReceipt() {
 .app-shell.has-player .footer {
   padding-bottom: 235px;
 }
+.lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 </style>
 
 <style>
@@ -2543,6 +2557,7 @@ async function saveReceipt() {
     font-size: 9px;
   }
 }
+.lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 </style>
 
 <style scoped>
@@ -2562,6 +2577,7 @@ async function saveReceipt() {
 .canteen-top-song::after, .canteen-top-controls button::after { border: 0; }
 .canteen-top-status { flex-basis: 100%; color: #a795b2; font-size: 10px; }
 @media (max-width: 760px) { .canteen-top-player { padding: 10px 10px 8px; gap: 8px; } .canteen-top-time { display: none; } .canteen-top-song { flex: 1; max-width: none; } .canteen-top-lyrics { order: 4; flex: 1 0 100%; } .canteen-top-status { order: 5; } .canteen-top-controls { gap: 2px; } .canteen-top-controls button { padding: 6px; } .canteen-top-title { font-size: 12px; } }
+.lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 </style>
 
 <style scoped>
@@ -2570,4 +2586,5 @@ async function saveReceipt() {
 .auto-order-copy > text:last-child { color: #7c8960; }
 .auto-order-track { height: 7px; margin-top: 10px; border-radius: 8px; overflow: hidden; background: #e1e5cd; }
 .auto-order-fill { height: 100%; border-radius: inherit; background: #a9bd73; transition: width .8s linear; }
+.lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 </style>
