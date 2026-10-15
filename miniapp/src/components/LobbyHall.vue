@@ -4,6 +4,7 @@ import {request,ApiError,type Guest} from '../lib/api';
 import {streamLobby,mergeLobby,retractable,type LobbyMessage} from '../lib/lobby';
 const props=defineProps<{foreground:boolean;me:Guest}>();
 const emit=defineEmits<{(e:'auth-expired'):void;(e:'unread',count:number):void}>();
+const syncNotice=ref('');
 const messages=ref<LobbyMessage[]>([]),draft=ref(''),error=ref(''),connection=ref('connecting'),online=ref(0),unread=ref(0),mutedUntil=ref<string|null>(null),now=ref(Date.now());
 const timeline=ref<HTMLElement|null>(null),composer=ref<HTMLTextAreaElement|null>(null),atBottom=ref(true),hasOlder=ref(true),loadingOlder=ref(false),sending=ref(false),initial=ref(false),showEmoji=ref(false);
 type Pending={id:string;text:string;status:'sending'|'failed';error:string};const pending=ref<Pending[]>([]);
@@ -26,7 +27,8 @@ async function bottom(){await nextTick();if(disposed||!visibleNow())return;const
 function scrolled(){const el=timeline.value;if(!el)return;const before=atBottom.value;atBottom.value=el.scrollHeight-el.scrollTop-el.clientHeight<55;if(atBottom.value&&!before)void markRead();}
 async function apply(list:LobbyMessage[],follow:boolean){if(disposed)return;messages.value=mergeLobby(messages.value,list);pending.value=pending.value.filter(p=>!list.some(m=>own(m)&&m.request_id===p.id));if(follow&&visibleNow())await bottom();}
 async function sync(){if(syncing)return;syncing=true;try{
- const ids=messages.value.map(m=>m.id),first=await request<{messages:LobbyMessage[]}>('/lobby/messages');if(disposed)return;
+ let ids=messages.value.map(m=>m.id);const newest=lastID(),first=await request<{messages:LobbyMessage[]}>('/lobby/messages');if(disposed)return;
+ if(newest&&first.messages.length===50&&Math.min(...first.messages.map(m=>m.id))>newest){messages.value=[];ids=[];hasOlder.value=true;syncNotice.value='离线期间有较多新消息，已同步最近50条；向上翻可以查看完整历史。';}
  if(!initial.value){hasOlder.value=first.messages.length===50;initial.value=true;}
  await apply(first.messages,atBottom.value);
  for(let i=0;i<ids.length;i+=100){const d=await request<{messages:LobbyMessage[]}>('/lobby/messages?ids='+ids.slice(i,i+100).join(','));if(disposed)return;await apply(d.messages,false);}
@@ -67,6 +69,7 @@ onBeforeUnmount(()=>{disposed=true;epoch++;controller?.abort();clearTimeout(retr
  <view class="fish-tank">
  <view class="tank-top"><text>茶水间实时广播</text><text :class="['connection',connection]">{{connection==='online'?'● 已连上鱼塘':connection==='connecting'?'◌ 正在连接…':'◌ 鱼塘信号不太好，正在重连'}}</text></view>
  <component :is="'div'" ref="timeline" class="timeline" @scroll="scrolled" tabindex="0" aria-label="大厅聊天记录">
+ <text v-if="syncNotice" class="history-end">{{syncNotice}}</text>
  <button v-if="hasOlder&&messages.length" class="history" :disabled="loadingOlder" @click="older">{{loadingOlder?'正在翻旧泡泡…':'↑ 看更早的聊天'}}</button><text v-else-if="messages.length" class="history-end">鱼塘的故事，从这里开始</text>
  <view v-if="!messages.length" class="empty"><text>🐟</text><text>{{initial?'鱼塘暂时平静，你来吐第一个泡泡。':'正在接通茶水间…'}}</text></view>
  <template v-for="(m,i) in messages" :key="m.id"><view v-if="i===0||date(m.created_at)!==date(messages[i-1].created_at)" class="day-divider">{{date(m.created_at)}} · 北京时间</view>
