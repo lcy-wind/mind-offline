@@ -1,0 +1,7 @@
+import {currentToken,ApiError,type Guest} from './api';
+export const mbtiGroups=[{name:'分析家',types:['INTJ','INTP','ENTJ','ENTP']},{name:'外交家',types:['INFJ','INFP','ENFJ','ENFP']},{name:'守护者',types:['ISTJ','ISFJ','ESTJ','ESFJ']},{name:'探险家',types:['ISTP','ISFP','ESTP','ESFP']}];
+export async function avatarThumbnail(file:File):Promise<Blob>{
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('请选择 JPG、PNG 或 WebP 图片');if(file.size>10*1024*1024)throw new Error('原图不能超过10MB');
+ const url=URL.createObjectURL(file);try{const img=new Image();img.src=url;await img.decode();const side=Math.min(img.naturalWidth,img.naturalHeight);if(!side)throw new Error('无法读取图片');const canvas=document.createElement('canvas');canvas.width=canvas.height=256;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('浏览器暂时无法处理图片');ctx.fillStyle='#ffffff';ctx.fillRect(0,0,256,256);ctx.drawImage(img,(img.naturalWidth-side)/2,(img.naturalHeight-side)/2,side,side,0,0,256,256);return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('图片压缩失败')),'image/jpeg',.85));}finally{URL.revokeObjectURL(url)}
+}
+export async function uploadProfileAvatar(blob:Blob):Promise<Guest>{const token=currentToken();const r=await fetch('/api/profile/avatar',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'image/jpeg'},body:blob});if(token!==currentToken())throw new ApiError('账号已切换',0);const data=await r.json();if(!r.ok)throw new ApiError(data.error||'头像上传失败',r.status);return data;}

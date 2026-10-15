@@ -176,6 +176,16 @@ CREATE INDEX IF NOT EXISTS lobby_messages_owner ON lobby_messages(account_id,cre
 CREATE TABLE IF NOT EXISTS lobby_reactions (
  message_id bigint NOT NULL REFERENCES lobby_messages(id) ON DELETE CASCADE,
  account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
- emoji text NOT NULL CHECK(emoji IN ('🐟','😂','＋1')),
+ emoji text NOT NULL CHECK(emoji IN ('🐟','😂','＋1','👍','❤️','🎉')),
  PRIMARY KEY(message_id,account_id,emoji)
 );
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS nickname text NOT NULL DEFAULT '';
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS mbti text NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS account_avatars (
+ account_id text PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ jpeg bytea NOT NULL CHECK(octet_length(jpeg)<=131072), version text NOT NULL
+);
+
+ALTER TABLE lobby_reactions DROP CONSTRAINT IF EXISTS lobby_reactions_emoji_check;
+ALTER TABLE lobby_reactions ADD CONSTRAINT lobby_reactions_emoji_check CHECK(emoji IN ('🐟','😂','＋1','👍','❤️','🎉'));

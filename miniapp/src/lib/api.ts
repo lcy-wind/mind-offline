@@ -14,6 +14,9 @@ export interface Dish {
   available: boolean;
 }
 export interface Guest {
+  nickname?: string;
+  avatar_url?: string;
+  mbti?: string;
   is_admin?: boolean;
   id: string;
   username: string;

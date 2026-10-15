@@ -10,6 +10,7 @@ import SlimLab from "../../components/SlimLab.vue";
 const slimOpened = ref(false);
 // #ifdef H5
 import LobbyHall from "../../components/LobbyHall.vue";
+import PersonalCenter from "../../components/PersonalCenter.vue";
 // #endif
 const lobbyUnread = ref(0);
 import MiniPlayer from "../../components/MiniPlayer.vue";
@@ -650,13 +651,14 @@ async function saveReceipt() {
         <button class="nav-item" :class="{ active: tab === 'slim' }" @click="tab = 'slim'"><text>⚖</text><text>瘦瘦研究所</text><text class="nav-index">06</text></button>
         <!-- #ifdef H5 -->
         <button class="nav-item" :class="{active:tab==='lobby'}" @click="tab='lobby'"><text>🐟</text><text>摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text v-else class="nav-index">07</text></button>
+        <button class="nav-item" :class="{active:tab==='profile'}" @click="tab='profile'"><text>☺</text><text>个人中心</text><text class="nav-index">08</text></button>
         <!-- #endif -->
         <button
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">08</text></button
+          ><text class="nav-index">09</text></button
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -871,6 +873,7 @@ async function saveReceipt() {
         />
         <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
         <!-- #ifdef H5 -->
+        <PersonalCenter v-if="me.id && tab==='profile'" :key="me.id" :me="me" @updated="me=$event" @auth-expired="forgetSession" />
         <LobbyHall v-if="me.id" v-show="tab==='lobby'" :key="me.id" :me="me" :foreground="tab==='lobby'" @auth-expired="forgetSession" @unread="lobbyUnread=$event"/>
         <!-- #endif -->
         <SlimLab v-if="me.id && slimOpened" v-show="tab === 'slim'" :key="me.id" :foreground="tab === 'slim'" @auth-expired="forgetSession" />

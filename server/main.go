@@ -241,6 +241,10 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("GET /api/healing/conversations/{id}", a.customer(a.healingDetail))
 	m.HandleFunc("POST /api/healing/conversations/{id}/delete", a.customer(a.healingDelete))
 	m.HandleFunc("POST /api/healing/conversations/{id}/messages", a.customer(a.healingSend))
+	m.HandleFunc("POST /api/profile", a.customer(a.saveProfile))
+	m.HandleFunc("POST /api/profile/avatar", a.customer(a.uploadAvatar))
+	m.HandleFunc("POST /api/profile/avatar/delete", a.customer(a.removeAvatar))
+	m.HandleFunc("GET /api/avatars/{id}", a.avatar)
 	m.HandleFunc("GET /api/lobby/events", a.customer(a.lobbyStream))
 	m.HandleFunc("GET /api/lobby/messages", a.customer(a.lobbyMessages))
 	m.HandleFunc("GET /api/admin/lobby/mutes", a.admin(a.lobbyMutes))
@@ -322,7 +326,12 @@ func (a *app) me(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
-	jsonOut(w, 200, map[string]any{"id": id, "username": username, "balance": balance, "claimed_today": claimed, "is_admin": id == a.adminAccountID && a.adminAccountID != ""})
+	p, err := a.profile(id, r)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	jsonOut(w, 200, map[string]any{"id": id, "username": username, "nickname": p.Nickname, "mbti": p.MBTI, "avatar_url": p.AvatarURL, "balance": balance, "claimed_today": claimed, "is_admin": id == a.adminAccountID && a.adminAccountID != ""})
 }
 func (a *app) claim(w http.ResponseWriter, r *http.Request) {
 	_, e := a.db.Exec(r.Context(), "UPDATE guests SET balance=balance+100,last_claim=(now() AT TIME ZONE 'Asia/Shanghai')::date WHERE id=$1 AND (last_claim IS NULL OR last_claim<(now() AT TIME ZONE 'Asia/Shanghai')::date)", r.Context().Value(guestKey))
