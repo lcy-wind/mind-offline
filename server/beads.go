@@ -12,6 +12,8 @@ import (
 )
 
 type beadData struct {
+	Height   int    `json:"height,omitempty"`
+	Palette  string `json:"palette,omitempty"`
 	Name     string `json:"name"`
 	Size     int    `json:"size"`
 	Mode     string `json:"mode"`
@@ -28,7 +30,17 @@ type beadWork struct {
 
 func validateBeads(d *beadData) bool {
 	d.Name = strings.TrimSpace(d.Name)
-	if utf8.RuneCountInString(d.Name) < 1 || utf8.RuneCountInString(d.Name) > 40 || (d.Size != 16 && d.Size != 32 && d.Size != 48) || (d.Mode != "free" && d.Mode != "guided") || len(d.Pixels) != d.Size*d.Size {
+	height := d.Height
+	if height == 0 {
+		height = d.Size
+	}
+	colors := 32
+	if d.Palette == "mard-291-v1" {
+		colors = 291
+	} else if d.Palette != "" && d.Palette != "legacy32" {
+		return false
+	}
+	if utf8.RuneCountInString(d.Name) < 1 || utf8.RuneCountInString(d.Name) > 40 || (d.Size < 8 || d.Size > 128 || height < 8 || height > 128) || (d.Mode != "free" && d.Mode != "guided") || len(d.Pixels) != d.Size*height {
 		return false
 	}
 	if d.Mode == "guided" && len(d.Target) != len(d.Pixels) {
@@ -39,7 +51,7 @@ func validateBeads(d *beadData) bool {
 	}
 	for _, a := range [][]int{d.Pixels, d.Target} {
 		for _, v := range a {
-			if v < 0 || v > 32 {
+			if v < 0 || v > colors {
 				return false
 			}
 		}
@@ -133,7 +145,7 @@ func (a *app) beadGet(w http.ResponseWriter, r *http.Request) {
 }
 func (a *app) beadSave(w http.ResponseWriter, r *http.Request) {
 	var b beadWork
-	if !decode(w, r, &b) {
+	if !decodeSized(w, r, &b, 256*1024) {
 		return
 	}
 	if len(b.ID) < 16 || len(b.ID) > 80 || strings.Trim(b.ID, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" || b.Revision < 0 || !validateBeads(&b.Data) {

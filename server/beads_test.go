@@ -40,3 +40,29 @@ func TestBeadValidation(t *testing.T) {
 		t.Fatal("oversized board accepted")
 	}
 }
+
+func TestBeadBrandAndRectangle(t *testing.T) {
+	d := beadData{Name: "MARD大图", Size: 128, Height: 96, Palette: "mard-291-v1", Mode: "free", Pixels: make([]int, 128*96)}
+	d.Pixels[0] = 291
+	if !validateBeads(&d) {
+		t.Fatal("large MARD rectangle rejected")
+	}
+	d.Palette = ""
+	if validateBeads(&d) {
+		t.Fatal("MARD index allowed in legacy palette")
+	}
+	d.Palette = "unknown"
+	if validateBeads(&d) {
+		t.Fatal("unknown palette accepted")
+	}
+	d.Palette = "mard-291-v1"
+	d.Pixels[0] = 292
+	if validateBeads(&d) {
+		t.Fatal("unknown MARD index accepted")
+	}
+	d.Pixels[0] = 1
+	d.Height = 129
+	if validateBeads(&d) {
+		t.Fatal("oversized height accepted")
+	}
+}

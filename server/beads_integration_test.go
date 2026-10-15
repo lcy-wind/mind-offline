@@ -90,6 +90,22 @@ func TestBeadsIntegration(t *testing.T) {
 	call("POST", "/"+work.ID+"/delete", sessions[0], map[string]int{"revision": 2}, 200)
 	call("POST", "", sessions[0], saved, 409)
 	call("GET", "/"+work.ID, sessions[0], nil, 404)
+
+	// Max-sized two-grid documents exceed the old generic 32KB request limit.
+	large := beadWork{ID: "large_mard_work_12345", Data: beadData{Name: "真实色号大图", Size: 128, Height: 128, Palette: "mard-291-v1", Mode: "guided", Pixels: make([]int, 128*128), Target: make([]int, 128*128), Finished: true}}
+	for i := range large.Data.Pixels {
+		large.Data.Pixels[i] = 291
+		large.Data.Target[i] = 291
+	}
+	encoded, _ := json.Marshal(large)
+	if len(encoded) < 32768 {
+		t.Fatal("test payload too small")
+	}
+	json.Unmarshal(call("POST", "", sessions[0], large, 200), &saved)
+	if saved.Data.Height != 128 || saved.Data.Palette != "mard-291-v1" || saved.Data.Pixels[len(saved.Data.Pixels)-1] != 291 {
+		t.Fatal("large palette metadata not preserved")
+	}
+	call("GET", "/"+large.ID, sessions[1], nil, 404)
 	data, _ := json.Marshal(work.Data)
 	if _, err = db.Exec(ctx, "INSERT INTO bead_works(account_id,id,data) SELECT $1,'quota_'||g,$2::jsonb FROM generate_series(1,100) g", ids[1], data); err != nil {
 		t.Fatal(err)
