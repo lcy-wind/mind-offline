@@ -7,3 +7,16 @@ export function bmiLabel(value:number){return value<18.5?'体重偏低':value<24
 export function foodCalories(grams:number,rate:number){return grams*rate/100;}
 export function exerciseCalories(minutes:number,weight:number,met:number){return met*3.5*weight/200*minutes;}
 export function weightDays(entries:SlimEntry[]){const days=new Map<string,SlimEntry>();for(const e of entries)if(e.kind==='weight'&&!days.has(e.day))days.set(e.day,e);return [...days.values()].sort((a,b)=>a.day.localeCompare(b.day));}
+
+const foodRemarks=['胃部已签收，老板的饼请走废品回收。','今日续航已补货，灵魂暂不接受加班。','这口算你的，工作群不许分走。','饭已入账，烦恼暂时挂起。'];
+const exerciseRemarks=['工位失去一位人质，身体喜提一次放风。','腿：终于想起来我不是椅子的配件了。','今日移动完成，老板的需求没有跟上来。','身体刚刚上线，工作消息继续免打扰。'];
+const weightRemarks=['只是记个数，秤没有人事任免权。','身体观察已归档，不开绩效会。','今天的数值收到了，长期趋势慢慢看。'];
+export function entryRemark(e:SlimEntry){const pool=e.kind==='food'?foodRemarks:e.kind==='exercise'?exerciseRemarks:weightRemarks;let n=0;for(const c of e.id)n=(n+c.charCodeAt(0))%997;return pool[n%pool.length];}
+export function dayReport(entries:SlimEntry[]){
+ const food=entries.filter(e=>e.kind==='food'),exercise=entries.filter(e=>e.kind==='exercise');
+ const stamps=Number(food.length>0)+Number(exercise.length>0);
+ return {food:food.length,exercise:exercise.length,stamps,
+ title:stamps===2?'吃动搭子，今日合体':food.length?'胃部已上线':'腿部已上线',
+ detail:stamps===2?'饭有记录，活动也有回音。今天的身体小剧场，素材齐了。':food.length?'投喂记录已收好。身体不是永动机，吃饭这事很正经。':exercise.length?'身体已经出门营业，活动记录收到了。没记饭不代表没吃饭。':'研究所刚开门，今天的故事由你投喂。',
+ };
+}
