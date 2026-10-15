@@ -11,8 +11,11 @@ const slimOpened = ref(false);
 // #ifdef H5
 import LobbyHall from "../../components/LobbyHall.vue";
 import PersonalCenter from "../../components/PersonalCenter.vue";
+import {defineAsyncComponent} from "vue";
+const BeadStudio=defineAsyncComponent(()=>import("../../components/BeadStudio.vue"));
 // #endif
 const lobbyUnread = ref(0);
+const beadsOpened=ref(false);
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
 import { player, playerState, checkPlayerBinding } from "../../lib/player";
@@ -41,7 +44,7 @@ const tab = ref("menu"),
   menu = ref<Dish[]>([]),
   me = ref<Guest>({ id: "", username: "", balance: 0, claimed_today: false }),
   orders = ref<Order[]>([]);
-watch(tab, value => { if (value === "healing") healingOpened.value = true; if (value === "work") workOpened.value = true; if (value === "slim") slimOpened.value = true; }, {flush: "sync"});
+watch(tab, value => { if (value === "healing") healingOpened.value = true; if (value === "work") workOpened.value = true; if (value === "slim") slimOpened.value = true; if(value==="beads")beadsOpened.value=true; }, {flush: "sync"});
 const loading = ref(true),
   error = ref(""),
   busy = ref(false),
@@ -77,6 +80,7 @@ function clearPrivateState() {
   workOpened.value = false;
   slimOpened.value = false;
   lobbyUnread.value = 0;
+  beadsOpened.value=false;
   musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
@@ -663,13 +667,14 @@ async function saveReceipt() {
         <button class="nav-item" :class="{ active: tab === 'slim' }" @click="tab = 'slim'"><text>⚖</text><text>瘦瘦研究所</text><text class="nav-index">06</text></button>
         <!-- #ifdef H5 -->
         <button class="nav-item" :class="{active:tab==='lobby'}" @click="tab='lobby'"><text>🐟</text><text>摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text v-else class="nav-index">07</text></button>
+        <button class="nav-item" :class="{active:tab==='beads'}" @click="tab='beads'"><text>✿</text><text>电子拼豆</text><text class="nav-index">08</text></button>
         <!-- #endif -->
         <button
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">08</text></button
+          ><text class="nav-index">09</text></button
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -884,6 +889,7 @@ async function saveReceipt() {
         />
         <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
         <!-- #ifdef H5 -->
+        <BeadStudio v-if="me.id && beadsOpened" v-show="tab==='beads'" :key="me.id" :account-id="me.id" :foreground="tab==='beads'" @auth-expired="forgetSession" />
         <PersonalCenter v-if="me.id && tab==='profile'" :key="me.id" :me="me" @updated="me=$event" @auth-expired="forgetSession" />
         <LobbyHall v-if="me.id" v-show="tab==='lobby'" :key="me.id" :me="me" :foreground="tab==='lobby'" @auth-expired="forgetSession" @unread="lobbyUnread=$event"/>
         <!-- #endif -->

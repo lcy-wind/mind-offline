@@ -197,3 +197,10 @@ CREATE TABLE IF NOT EXISTS lobby_message_reads (
  account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
  read_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(message_id,account_id)
 );
+CREATE TABLE IF NOT EXISTS bead_works (
+ account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ id text NOT NULL, revision integer NOT NULL DEFAULT 1,
+ data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(account_id,id)
+);
+CREATE INDEX IF NOT EXISTS bead_works_owner_updated ON bead_works(account_id,updated_at DESC,id);
