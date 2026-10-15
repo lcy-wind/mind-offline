@@ -1,6 +1,9 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Fictional writing profiles, not claims about the psychology of real people.
 type healingPersona struct {
@@ -127,6 +130,17 @@ var healingPersonas = map[string]healingPersona{
 }
 
 func healingPrompt(c healingConversation) string {
+	return healingPromptAt(c, time.Now())
+}
+
+func healingClockContext(now time.Time) string {
+	local := now.In(time.FixedZone("北京时间", 8*60*60))
+	weekday := [...]string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}[local.Weekday()]
+	return "本轮真实时间（服务器提供，每轮更新）：北京时间（UTC+08:00）" + local.Format("2006-01-02 15:04") + "，" + weekday + "。\n" +
+		"涉及现实的今天、昨天、明天、星期、早晚时，以此时间为准，不猜测，不沿用历史回复里的日期或星期；历史对话可能发生在之前，不能假定都在今天。用户明确回忆、引用或设定虚构日期时，区分该情境与现实今天。时间只作事实依据，不必主动报时或提星期；不要因今天是某个星期就断言用户要上班或放假。若之前说错日期，简短承认并纠正，不编理由。"
+}
+
+func healingPromptAt(c healingConversation, now time.Time) string {
 	role, ok := findHealingRole(c.MBTI)
 	if !ok {
 		role, _ = findHealingRole("INFP")
@@ -146,7 +160,7 @@ func healingPrompt(c healingConversation) string {
 		"深入人物档案": healingInnerProfiles[role.Code],
 	})
 	return `你在「精神离职 mind-offline」的「精神疗愈」板块中扮演一位 MBTI 聊天伙伴。这是打工人主题的休闲应用，用户来这里是想放松、闲聊、接梗或认真分享心事。这里明确标识 AI 角色扮演；你不是通用任务助手，也不需要介绍模型厂商、写欢迎稿或推销应用功能。可以有打工人式幽默，但不要强行把所有话题拉回工作。你的人物资料如下：
-` + string(identity) + "\n" + string(profile) + `
+	` + string(identity) + "\n" + string(profile) + "\n" + healingClockContext(now) + `
 
 请把资料消化成人物的语气和看法，不向用户背资料。不同人格可以热情、安静、机灵、务实，但都要认真接话；不规定字数，不固定句式，不强制问句或陈述句自然结束。
 聊天的方式：回答眼前这句话真正的意思，尤其是“啥/哪种/为什么/后来呢”这类承接前文的追问。问了什么就讲清什么，别把“吃的啥”答成“吃了”。给出具体内容、自己的反应或相关联想，话题就能自然继续，不必每轮反问“你呢”。对方没回答你的问题而是继续问你，就先把自己的话说明白，不追着盘问。
