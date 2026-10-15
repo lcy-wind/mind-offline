@@ -86,6 +86,24 @@ func TestLobbyIntegration(t *testing.T) {
 	if len(list.Messages) != 1 || list.Messages[0].Content != "hello <script>alert(1)</script>" {
 		t.Fatal("public history missing")
 	}
+
+	// Read receipts record explicit messages, exclude the sender and are idempotent.
+	call("POST", "/receipts", sessions[1], map[string]any{"ids": []int64{first}}, 200)
+	call("POST", "/receipts", sessions[0], map[string]any{"ids": []int64{first}}, 200)
+	call("POST", "/receipts", sessions[0], map[string]any{"ids": []int64{first}}, 200)
+	json.Unmarshal(call("GET", "/messages", sessions[1], nil, 200), &list)
+	if list.Messages[0].ReadCount != 1 {
+		t.Fatal("receipt count includes self or duplicates")
+	}
+	var readers struct {
+		Items []map[string]any `json:"items"`
+	}
+	json.Unmarshal(call("GET", path(first)+"/readers", sessions[1], nil, 200), &readers)
+	if len(readers.Items) != 1 || readers.Items[0]["id"] != ids[0] {
+		t.Fatal("reader list wrong")
+	}
+	call("GET", path(first)+"/readers", sessions[0], nil, 403)
+	call("POST", "/receipts", sessions[0], map[string]any{"ids": []int64{}}, 400)
 	call("POST", path(first)+"/retract", sessions[0], nil, 409)
 	for i := 0; i < 2; i++ {
 		call("POST", path(first)+"/reaction", sessions[0], map[string]any{"emoji": "🐟", "active": true}, 200)
@@ -112,7 +130,13 @@ func TestLobbyIntegration(t *testing.T) {
 	mute["hours"] = 0
 	call("POST", "/messages/0/moderate", sessions[0], mute, 200)
 	second := post(sessions[1], "second_message_12345", "back", 201)
+
+	json.Unmarshal(call("GET", "/messages", sessions[1], nil, 200), &list)
+	if list.Messages[0].ReadCount != 0 {
+		t.Fatal("reading another message marked future message read")
+	}
 	call("POST", path(second)+"/retract", sessions[1], nil, 200)
+	call("GET", path(second)+"/readers", sessions[1], nil, 404)
 	json.Unmarshal(call("GET", "/messages", sessions[0], nil, 200), &list)
 	if list.Messages[0].Status != "retracted" || list.Messages[0].Content != "" {
 		t.Fatal("retracted content exposed")

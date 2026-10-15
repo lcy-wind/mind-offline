@@ -192,3 +192,8 @@ ALTER TABLE lobby_reactions ADD CONSTRAINT lobby_reactions_emoji_check CHECK(emo
 -- Give legacy accounts a personal nickname without overwriting chosen names.
 UPDATE accounts SET nickname=username WHERE nickname='';
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS gender text NOT NULL DEFAULT '' CHECK(gender IN ('','male','female'));
+CREATE TABLE IF NOT EXISTS lobby_message_reads (
+ message_id bigint NOT NULL REFERENCES lobby_messages(id) ON DELETE CASCADE,
+ account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ read_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(message_id,account_id)
+);

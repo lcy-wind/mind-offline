@@ -249,6 +249,8 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("GET /api/lobby/messages", a.customer(a.lobbyMessages))
 	m.HandleFunc("GET /api/admin/lobby/mutes", a.admin(a.lobbyMutes))
 	m.HandleFunc("GET /api/lobby/state", a.customer(a.lobbyState))
+	m.HandleFunc("POST /api/lobby/receipts", a.customer(a.lobbyReceipt))
+	m.HandleFunc("GET /api/lobby/messages/{id}/readers", a.customer(a.lobbyReaders))
 	m.HandleFunc("POST /api/lobby/read", a.customer(a.lobbyRead))
 	m.HandleFunc("POST /api/lobby/messages", a.customer(a.lobbySend))
 	m.HandleFunc("POST /api/lobby/messages/{id}/retract", a.customer(a.lobbyRetract))

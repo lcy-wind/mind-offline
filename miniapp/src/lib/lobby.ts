@@ -1,6 +1,6 @@
 import {currentToken,ApiError} from './api';
 import {createChatEventParser,type ChatEvent} from './healing-stream';
-export interface LobbyMessage {nickname?:string;mbti?:string;avatar_url?:string;is_admin?:boolean;id:number;account_id:string;username:string;request_id:string;content:string;status:'active'|'retracted'|'removed';created_at:string;updated_at:string;reactions:{emoji:string;count:number;mine:boolean}[]}
+export interface LobbyMessage {read_count?:number;nickname?:string;mbti?:string;avatar_url?:string;is_admin?:boolean;id:number;account_id:string;username:string;request_id:string;content:string;status:'active'|'retracted'|'removed';created_at:string;updated_at:string;reactions:{emoji:string;count:number;mine:boolean}[]}
 export function mergeLobby(old:LobbyMessage[],incoming:LobbyMessage[]){const map=new Map(old.map(m=>[m.id,m]));for(const m of incoming){const prev=map.get(m.id);if(prev&&prev.status!=='active'&&m.status==='active')continue;const version=(s:string)=>[Date.parse(s),Number((s.match(/\.(\d+)/)?.[1]||'').padEnd(9,'0'))];const next=version(m.updated_at),last=prev?version(prev.updated_at):[0,0];if(!prev||next[0]>last[0]||(next[0]===last[0]&&next[1]>=last[1]))map.set(m.id,m);}return [...map.values()].sort((a,b)=>a.id-b.id);}
 export function retractable(m:LobbyMessage,owner:string,now:number){return m.account_id===owner&&m.status==='active'&&now-Date.parse(m.created_at)<120000&&now>=Date.parse(m.created_at);}
 export async function streamLobby(active:boolean,signal:AbortSignal,accept:(event:ChatEvent)=>void){
@@ -23,3 +23,6 @@ export const emojiCategories=[
  {name:'续命补给',items:['☕','🍵','🧋','🥛','🍺','🥤','🍚','🍜','🍲','🍣','🍙','🍔','🍟','🍕','🥪','🥟','🍗','🥚','🍞','🍰','🍩','🍦','🍫','🍎']},
  {name:'可爱杂货',items:['🐱','🐶','🐼','🐸','🐷','🐔','🦆','🦊','🐧','🐢','🦥','🐮','🐎','🌱','🌿','🍄','🌸','🌈','⭐','✨','🔥','💯','🎉','🎊','🎈','🎁','🏆','❤️','💚','💜','💔','💤']}
 ];
+
+// Only count a substantial part of a bubble visible inside the current viewport.
+export function visibleLobbyMessage(b:{top:number;bottom:number;height:number},root:{top:number;bottom:number;height:number}){const overlap=Math.min(b.bottom,root.bottom)-Math.max(b.top,root.top);return b.height>0&&root.height>0&&overlap>=Math.min(b.height,root.height)*.6;}

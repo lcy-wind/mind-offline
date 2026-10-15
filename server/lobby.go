@@ -109,6 +109,7 @@ func (a *app) lobbyStream(w http.ResponseWriter, r *http.Request) {
 }
 
 type lobbyMessage struct {
+	ReadCount int             `json:"read_count"`
 	Nickname  string          `json:"nickname"`
 	MBTI      string          `json:"mbti"`
 	AvatarURL string          `json:"avatar_url"`
@@ -125,11 +126,11 @@ type lobbyMessage struct {
 }
 
 const lobbySelect = `SELECT COALESCE(NULLIF(a.nickname,''),a.username),a.mbti,COALESCE((SELECT '/api/avatars/'||v.account_id||'?v='||v.version FROM account_avatars v WHERE v.account_id=a.id),''),m.id,m.account_id,a.username,m.request_id,m.content,m.status,m.created_at,m.updated_at,
- COALESCE((SELECT jsonb_agg(x) FROM (SELECT emoji,count(*) AS count,bool_or(account_id=$1) AS mine FROM lobby_reactions WHERE message_id=m.id AND m.status='active' GROUP BY emoji ORDER BY emoji) x),'[]'::jsonb)
+ COALESCE((SELECT jsonb_agg(x) FROM (SELECT emoji,count(*) AS count,bool_or(account_id=$1) AS mine FROM lobby_reactions WHERE message_id=m.id AND m.status='active' GROUP BY emoji ORDER BY emoji) x),'[]'::jsonb),CASE WHEN m.account_id=$1 AND m.status='active' THEN (SELECT count(*) FROM lobby_message_reads r WHERE r.message_id=m.id AND r.account_id<>m.account_id) ELSE 0 END
  FROM lobby_messages m JOIN accounts a ON a.id=m.account_id `
 
 func scanLobby(row pgx.Row) (m lobbyMessage, err error) {
-	err = row.Scan(&m.Nickname, &m.MBTI, &m.AvatarURL, &m.ID, &m.AccountID, &m.Username, &m.RequestID, &m.Content, &m.Status, &m.CreatedAt, &m.UpdatedAt, &m.Reactions)
+	err = row.Scan(&m.Nickname, &m.MBTI, &m.AvatarURL, &m.ID, &m.AccountID, &m.Username, &m.RequestID, &m.Content, &m.Status, &m.CreatedAt, &m.UpdatedAt, &m.Reactions, &m.ReadCount)
 	return
 }
 func lobbyID(r *http.Request) (int64, error) { return strconv.ParseInt(r.PathValue("id"), 10, 64) }
