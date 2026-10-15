@@ -2,7 +2,7 @@
 import {ref,computed,nextTick,onBeforeUnmount,getCurrentInstance} from 'vue';
 import {workDateParts} from '../lib/work-tasks';
 import {dateCaption,shiftDay,shiftMonth,nextMonday,monthDays} from '../lib/work-calendar';
-const props=withDefaults(defineProps<{modelValue:string;title?:string;min?:string;clearable?:boolean}>(),{title:'安排一个日子',min:'',clearable:true});
+const props=withDefaults(defineProps<{modelValue:string;title?:string;min?:string;max?:string;clearable?:boolean}>(),{title:'安排一个日子',min:'',max:'',clearable:true});
 const emit=defineEmits<{(e:'update:modelValue',value:string):void}>();
 const panelHeight=ref(600);
 const opened=ref(false),draft=ref(''),month=ref(''),today=ref('');
@@ -11,9 +11,10 @@ const weekdays=['一','二','三','四','五','六','日'];
 const days=computed(()=>month.value?monthDays(month.value):[]);
 const monthTitle=computed(()=>month.value.slice(0,4)+'年 '+Number(month.value.slice(5))+'月');
 const shortcuts=computed(()=>today.value?[{name:'今天',date:today.value},{name:'明天',date:shiftDay(today.value,1)},{name:'下周一',date:nextMonday(today.value)}]:[]);
+const nextDisabled=computed(()=>!!props.max&&shiftMonth(month.value||'2026-01',1)>props.max.slice(0,7));
 const previousDisabled=computed(()=>!!props.min&&shiftMonth(month.value||'2026-01',-1)<props.min.slice(0,7));
 let returnFocus:HTMLElement|null=null;
-function open(){panelHeight.value=Math.min(600,Math.max(300,uni.getSystemInfoSync().windowHeight-28));today.value=workDateParts(new Date().toISOString()).day;draft.value=props.modelValue||today.value;if(props.min&&draft.value<props.min)draft.value=props.min;month.value=draft.value.slice(0,7);opened.value=true;
+function open(){panelHeight.value=Math.min(600,Math.max(300,uni.getSystemInfoSync().windowHeight-28));today.value=workDateParts(new Date().toISOString()).day;draft.value=props.modelValue||today.value;if(props.min&&draft.value<props.min)draft.value=props.min;if(props.max&&draft.value>props.max)draft.value=props.max;month.value=draft.value.slice(0,7);opened.value=true;
  // #ifdef H5
  returnFocus=document.activeElement as HTMLElement;nextTick(()=>document.getElementById(id)?.querySelector<HTMLButtonElement>('.calendar-day.selected')?.focus());
  // #endif
@@ -23,8 +24,8 @@ function close(){opened.value=false;
  returnFocus?.focus();
  // #endif
 }
-function choose(day:string){if(props.min&&day<props.min)return;draft.value=day;month.value=day.slice(0,7);}
-function confirm(){if(draft.value&&(!props.min||draft.value>=props.min)){emit('update:modelValue',draft.value);close();}}
+function choose(day:string){if((props.min&&day<props.min)||(props.max&&day>props.max))return;draft.value=day;month.value=day.slice(0,7);}
+function confirm(){if(draft.value&&(!props.min||draft.value>=props.min)&&(!props.max||draft.value<=props.max)){emit('update:modelValue',draft.value);close();}}
 function clear(){emit('update:modelValue','');close();}
 function keys(e:KeyboardEvent){
  // #ifdef H5
@@ -40,15 +41,15 @@ onBeforeUnmount(()=>{opened.value=false;});
 </script>
 <template>
 <view class="work-date-picker">
- <button class="date-trigger" @click="open" :aria-label="title+'：'+(modelValue||'尚未选择')" :aria-expanded="opened"><view class="calendar-icon"><text>▦</text></view><view class="date-copy"><text class="date-caption">{{modelValue?dateCaption(modelValue):'选择日期'}}</text><text class="date-subtitle">{{modelValue?modelValue.slice(0,4)+' 年':clearable?'还没定？可以先留空':'安排邮件到达的日子'}}</text></view><text class="chevron">⌄</text></button>
+ <button class="date-trigger" @click="open" :aria-label="title+'：'+(modelValue||'尚未选择')" :aria-expanded="opened"><view class="calendar-icon"><text>▦</text></view><view class="date-copy"><text class="date-caption">{{modelValue?dateCaption(modelValue):'选择日期'}}</text><text class="date-subtitle">{{modelValue?modelValue.slice(0,4)+' 年':clearable?'还没定？可以先留空':'选择要记录的日子'}}</text></view><text class="chevron">⌄</text></button>
  <view v-if="opened" class="calendar-backdrop" @click.self="close" @touchmove.stop.prevent>
   <view :id="id" class="calendar-panel" role="dialog" aria-modal="true" :aria-label="title" @keydown="keys" @touchmove.stop>
    <scroll-view scroll-y :style="{height:panelHeight+'px'}"><view class="calendar-inner">
-   <view class="calendar-heading"><view><text class="calendar-eyebrow">给工作留个位置</text><text class="calendar-title">{{title}}</text></view><button class="calendar-close" @click="close" aria-label="关闭日期选择">×</button></view>
-   <view class="quick-dates"><button v-for="s in shortcuts" :key="s.name" :class="{picked:draft===s.date}" :disabled="!!min&&s.date<min" @click="choose(s.date)">{{s.name}}</button></view>
-   <view class="month-heading"><button class="month-arrow" :disabled="previousDisabled" @click="month=shiftMonth(month,-1)" aria-label="上个月">‹</button><text>{{monthTitle}}</text><button class="month-arrow" @click="month=shiftMonth(month,1)" aria-label="下个月">›</button></view>
+   <view class="calendar-heading"><view><text class="calendar-eyebrow">给日子留个记号</text><text class="calendar-title">{{title}}</text></view><button class="calendar-close" @click="close" aria-label="关闭日期选择">×</button></view>
+   <view class="quick-dates"><button v-for="s in shortcuts" :key="s.name" :class="{picked:draft===s.date}" :disabled="(!!min&&s.date<min)||(!!max&&s.date>max)" @click="choose(s.date)">{{s.name}}</button></view>
+   <view class="month-heading"><button class="month-arrow" :disabled="previousDisabled" @click="month=shiftMonth(month,-1)" aria-label="上个月">‹</button><text>{{monthTitle}}</text><button class="month-arrow" :disabled="nextDisabled" @click="month=shiftMonth(month,1)" aria-label="下个月">›</button></view>
    <view class="weekdays"><text v-for="w in weekdays" :key="w">{{w}}</text></view>
-   <view class="calendar-grid"><button v-for="d in days" :key="d.date" :class="['calendar-day',{outside:d.outside,selected:draft===d.date,today:d.date===today}]" :disabled="!!min&&d.date<min" :aria-label="d.date" :aria-pressed="draft===d.date" @click="choose(d.date)">{{d.day}}<view v-if="d.date===today" class="today-dot"/></button></view>
+   <view class="calendar-grid"><button v-for="d in days" :key="d.date" :class="['calendar-day',{outside:d.outside,selected:draft===d.date,today:d.date===today}]" :disabled="(!!min&&d.date<min)||(!!max&&d.date>max)" :aria-label="d.date" :aria-pressed="draft===d.date" @click="choose(d.date)">{{d.day}}<view v-if="d.date===today" class="today-dot"/></button></view>
    <view class="selection-summary"><text>已选 {{dateCaption(draft)}}</text><text>北京时间</text></view>
    <view class="calendar-actions"><button v-if="clearable" class="clear-date" @click="clear">暂不安排</button><button v-else class="clear-date" @click="close">取消</button><button class="confirm-date" @click="confirm">就这天 ✓</button></view>
    </view></scroll-view>

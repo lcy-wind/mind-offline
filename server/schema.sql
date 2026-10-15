@@ -146,3 +146,17 @@ ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_attempts integer NOT NU
 ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_next_attempt timestamptz;
 ALTER TABLE work_tasks ADD COLUMN IF NOT EXISTS reminder_claimed_at timestamptz;
 CREATE INDEX IF NOT EXISTS work_reminders_due ON work_tasks(reminder_at) WHERE reminder_state='pending';
+
+CREATE TABLE IF NOT EXISTS slim_profiles (
+ account_id text PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+ gender text NOT NULL CHECK(gender IN ('male','female')),
+ height double precision NOT NULL CHECK(height BETWEEN 100 AND 250)
+);
+CREATE TABLE IF NOT EXISTS slim_entries (
+ account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ id text NOT NULL, day date NOT NULL, kind text NOT NULL CHECK(kind IN ('food','exercise','weight')),
+ name text NOT NULL, quantity double precision NOT NULL, rate double precision NOT NULL,
+ weight double precision NOT NULL, calories double precision NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(account_id,id)
+);
+CREATE INDEX IF NOT EXISTS slim_entries_owner_day ON slim_entries(account_id,day DESC,created_at DESC);
