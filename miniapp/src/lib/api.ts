@@ -14,6 +14,7 @@ export interface Dish {
   available: boolean;
 }
 export interface Guest {
+  gender?: "male" | "female" | "";
   nickname?: string;
   avatar_url?: string;
   mbti?: string;

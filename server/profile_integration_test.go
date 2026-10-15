@@ -67,10 +67,11 @@ func TestProfileIntegration(t *testing.T) {
 		ID        string `json:"id"`
 		Username  string `json:"username"`
 		Nickname  string `json:"nickname"`
+		Gender    string `json:"gender"`
 		MBTI      string `json:"mbti"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	json.Unmarshal(call("POST", "/profile", sessions[0], map[string]string{"nickname": "摸鱼队长", "mbti": "enfp"}, 200), &me)
+	json.Unmarshal(call("POST", "/profile", sessions[0], map[string]string{"nickname": "摸鱼队长", "mbti": "enfp", "gender": "male"}, 200), &me)
 	if me.Nickname != "摸鱼队长" || me.MBTI != "ENFP" || me.ID != ids[0] || me.Username != "profileqa_"+ids[0] {
 		t.Fatal("identity changed or profile not saved")
 	}
@@ -95,6 +96,8 @@ func TestProfileIntegration(t *testing.T) {
 	registration := map[string]string{"username": "reg_" + token()[:8], "password": "test-password-123"}
 	call("POST", "/auth/register", "", registration, 400)
 	registration["nickname"] = "  新来的摸鱼员  "
+	call("POST", "/auth/register", "", registration, 400)
+	registration["gender"] = "female"
 	var registered map[string]string
 	json.Unmarshal(call("POST", "/auth/register", "", registration, 201), &registered)
 	ids = append(ids, registered["id"])
@@ -102,10 +105,11 @@ func TestProfileIntegration(t *testing.T) {
 		t.Fatal("nickname not stored at registration")
 	}
 	json.Unmarshal(call("GET", "/me", registered["token"], nil, 200), &me)
-	if me.Username != registration["username"] || me.Nickname != "新来的摸鱼员" {
+	if me.Username != registration["username"] || me.Nickname != "新来的摸鱼员" || me.Gender != "female" {
 		t.Fatal("account and nickname not distinct")
 	}
 	call("POST", "/auth/login", "", map[string]string{"username": registration["username"], "password": registration["password"]}, 200)
+	call("POST", "/profile", sessions[0], map[string]string{"nickname": "不得改性别", "gender": "female", "mbti": "ENFP"}, 409)
 	var pngData bytes.Buffer
 	png.Encode(&pngData, image.NewRGBA(image.Rect(0, 0, 32, 32)))
 	req := httptest.NewRequest("POST", "/api/profile/avatar?account_id="+ids[1], bytes.NewReader(pngData.Bytes()))
@@ -134,7 +138,7 @@ func TestProfileIntegration(t *testing.T) {
 	if list.Messages[0].Nickname != "摸鱼队长" || list.Messages[0].MBTI != "ENFP" || list.Messages[0].AvatarURL != me.AvatarURL {
 		t.Fatal("profile not linked to messages")
 	}
-	call("POST", "/profile", sessions[0], map[string]string{"nickname": "新昵称", "mbti": "INTP"}, 200)
+	call("POST", "/profile", sessions[0], map[string]string{"nickname": "新昵称", "mbti": "INTP", "gender": "male"}, 200)
 	json.Unmarshal(call("GET", "/lobby/messages", sessions[1], nil, 200), &list)
 	if list.Messages[0].Nickname != "新昵称" || list.Messages[0].MBTI != "INTP" {
 		t.Fatal("historical message profile stale")

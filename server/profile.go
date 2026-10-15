@@ -16,6 +16,7 @@ import (
 )
 
 type userProfile struct {
+	Gender    string `json:"gender"`
 	Nickname  string `json:"nickname"`
 	MBTI      string `json:"mbti"`
 	AvatarURL string `json:"avatar_url"`
@@ -29,7 +30,7 @@ func avatarURL(id, version string) string {
 }
 func (a *app) profile(id string, r *http.Request) (p userProfile, err error) {
 	var version string
-	err = a.db.QueryRow(r.Context(), "SELECT COALESCE(NULLIF(a.nickname,''),a.username),a.mbti,COALESCE(v.version,'') FROM accounts a LEFT JOIN account_avatars v ON v.account_id=a.id WHERE a.id=$1", id).Scan(&p.Nickname, &p.MBTI, &version)
+	err = a.db.QueryRow(r.Context(), "SELECT COALESCE(NULLIF(a.nickname,''),a.username),a.mbti,a.gender,COALESCE(v.version,'') FROM accounts a LEFT JOIN account_avatars v ON v.account_id=a.id WHERE a.id=$1", id).Scan(&p.Nickname, &p.MBTI, &p.Gender, &version)
 	p.AvatarURL = avatarURL(id, version)
 	return
 }
@@ -56,8 +57,8 @@ func (a *app) saveProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Nickname = strings.TrimSpace(p.Nickname)
 	p.MBTI = strings.ToUpper(strings.TrimSpace(p.MBTI))
-	if !validProfile(p) {
-		fail(w, 400, "昵称需为1–24字，请选择有效MBTI或暂不设置")
+	if !validProfile(p) || !validGender(p.Gender) {
+		fail(w, 400, "请填写1–24字昵称、选择男生或女生，以及有效MBTI或暂不设置")
 		return
 	}
 	id := r.Context().Value(guestKey).(string)
@@ -65,9 +66,13 @@ func (a *app) saveProfile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "修改太快啦，稍后再试")
 		return
 	}
-	_, err := a.db.Exec(r.Context(), "UPDATE accounts SET nickname=$1,mbti=$2 WHERE id=$3", p.Nickname, p.MBTI, id)
+	result, err := a.db.Exec(r.Context(), "UPDATE accounts SET nickname=$1,mbti=$2,gender=$3 WHERE id=$4 AND (gender='' OR gender=$3)", p.Nickname, p.MBTI, p.Gender, id)
 	if err != nil {
 		a.internal(w, err)
+		return
+	}
+	if result.RowsAffected() == 0 {
+		fail(w, 409, "性别已确定，不能修改；请刷新个人资料后重试")
 		return
 	}
 	a.lobby.notify(-1)
@@ -165,3 +170,5 @@ func (a *app) avatar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+version+`"`)
 	w.Write(data)
 }
+
+func validGender(s string) bool { return s == "male" || s == "female" }

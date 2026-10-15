@@ -331,7 +331,7 @@ func (a *app) me(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	jsonOut(w, 200, map[string]any{"id": id, "username": username, "nickname": p.Nickname, "mbti": p.MBTI, "avatar_url": p.AvatarURL, "balance": balance, "claimed_today": claimed, "is_admin": id == a.adminAccountID && a.adminAccountID != ""})
+	jsonOut(w, 200, map[string]any{"id": id, "username": username, "nickname": p.Nickname, "gender": p.Gender, "mbti": p.MBTI, "avatar_url": p.AvatarURL, "balance": balance, "claimed_today": claimed, "is_admin": id == a.adminAccountID && a.adminAccountID != ""})
 }
 func (a *app) claim(w http.ResponseWriter, r *http.Request) {
 	_, e := a.db.Exec(r.Context(), "UPDATE guests SET balance=balance+100,last_claim=(now() AT TIME ZONE 'Asia/Shanghai')::date WHERE id=$1 AND (last_claim IS NULL OR last_claim<(now() AT TIME ZONE 'Asia/Shanghai')::date)", r.Context().Value(guestKey))

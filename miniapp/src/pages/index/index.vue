@@ -64,6 +64,7 @@ watch(
 const authMode = ref<"login" | "register">("login"),
   username = ref(""),
   registrationNickname = ref(""),
+  registrationGender = ref(""),
   password = ref(""),
   confirmPassword = ref(""),
   authError = ref(""),
@@ -133,6 +134,7 @@ async function openAdmin() {
 async function authenticate() {
   if (busy.value) return;
   authError.value = "";
+  if(authMode.value === "register"&&!registrationGender.value){authError.value="请选择男生或女生";return;}
   if(authMode.value === "register" && (!registrationNickname.value.trim() || Array.from(registrationNickname.value.trim()).length>24)){authError.value="请填写1–24字的个人昵称";return;}
   if (
     authMode.value === "register" &&
@@ -147,7 +149,7 @@ async function authenticate() {
       username: username.value,
       password: password.value,
     };
-    if(authMode.value === "register") data.nickname=registrationNickname.value.trim();
+    if(authMode.value === "register"){data.nickname=registrationNickname.value.trim();data.gender=registrationGender.value;}
     if (authMode.value === "register" && bindLegacy.value)
       data.legacy_token = uni.getStorageSync("mind-offline-token");
     const session = await request<{ token: string }>(
@@ -530,7 +532,7 @@ async function saveReceipt() {
         placeholder="3—24位字母、数字或下划线"
         :disabled="busy"
       />
-      <template v-if="authMode==='register'"><view class="field-label">个人昵称</view><input v-model="registrationNickname" class="auth-input" :maxlength="24" placeholder="你想让大家怎么称呼你（1–24字）" :disabled="busy"/><text class="registration-hint">账号用来登录，昵称用来展示；昵称以后可以修改。</text></template>
+      <template v-if="authMode==='register'"><view class="field-label">个人昵称</view><input v-model="registrationNickname" class="auth-input" :maxlength="24" placeholder="你想让大家怎么称呼你（1–24字）" :disabled="busy"/><text class="registration-hint">账号用来登录，昵称用来展示；昵称以后可以修改。</text><view class="field-label">性别</view><view class="registration-gender"><button :class="{selected:registrationGender==='male'}" :disabled="busy" @click="registrationGender='male'">男生</button><button :class="{selected:registrationGender==='female'}" :disabled="busy" @click="registrationGender='female'">女生</button></view></template>
       <view class="field-label">密码</view
       ><input
         v-model="password"
@@ -574,7 +576,7 @@ async function saveReceipt() {
       }}</text>
       <button
         class="primary wide"
-        :disabled="busy || !username || !password || (authMode==='register'&&!registrationNickname.trim())"
+        :disabled="busy || !username || !password || (authMode==='register'&&(!registrationNickname.trim()||!registrationGender))"
         @click="authenticate"
       >
         {{
@@ -2478,6 +2480,7 @@ async function saveReceipt() {
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
+.registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
 </style>
 
 <style>
@@ -2494,6 +2497,7 @@ async function saveReceipt() {
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
+.registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
 </style>
 
 <style>
@@ -2506,6 +2510,7 @@ async function saveReceipt() {
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
+.registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
 </style>
 
 <style>
@@ -2578,6 +2583,7 @@ async function saveReceipt() {
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
+.registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
 </style>
 
 <style scoped>
@@ -2600,6 +2606,7 @@ async function saveReceipt() {
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
+.registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
 </style>
 
 <style scoped>
@@ -2611,4 +2618,5 @@ async function saveReceipt() {
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
+.registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
 </style>
