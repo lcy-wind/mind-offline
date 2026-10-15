@@ -22,6 +22,7 @@ var dummyPasswordHash = func() []byte {
 }()
 
 type credentials struct {
+	Nickname    string `json:"nickname"`
 	Username    string `json:"username"`
 	Password    string `json:"password"`
 	LegacyToken string `json:"legacy_token,omitempty"`
@@ -37,6 +38,12 @@ func (a *app) registerCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Username = normalizeUsername(in.Username)
+	in.Nickname = strings.TrimSpace(in.Nickname)
+	if !validProfile(userProfile{Nickname: in.Nickname}) {
+		fail(w, 400, "请填写1–24字的个人昵称")
+		return
+	}
+
 	if !validCredentials(in) {
 		fail(w, 400, "用户名需为3—24位字母、数字或下划线；密码至少8个字符，最多72字节")
 		return
@@ -87,7 +94,7 @@ func (a *app) registerCustomer(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
-	_, e = tx.Exec(ctx, "INSERT INTO accounts(id,username,password_hash,last_login_at) VALUES($1,$2,$3,now())", id, in.Username, string(pw))
+	_, e = tx.Exec(ctx, "INSERT INTO accounts(id,username,password_hash,last_login_at,nickname) VALUES($1,$2,$3,now(),$4)", id, in.Username, string(pw), in.Nickname)
 	if e != nil {
 		var pe *pgconn.PgError
 		if errors.As(e, &pe) && pe.Code == "23505" {
@@ -107,7 +114,7 @@ func (a *app) registerCustomer(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, e)
 		return
 	}
-	jsonOut(w, 201, map[string]string{"token": t, "username": in.Username, "id": id})
+	jsonOut(w, 201, map[string]string{"token": t, "username": in.Username, "nickname": in.Nickname, "id": id})
 }
 func (a *app) loginCustomer(w http.ResponseWriter, r *http.Request) {
 	var in credentials

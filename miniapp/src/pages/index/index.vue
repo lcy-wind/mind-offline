@@ -63,6 +63,7 @@ watch(
 );
 const authMode = ref<"login" | "register">("login"),
   username = ref(""),
+  registrationNickname = ref(""),
   password = ref(""),
   confirmPassword = ref(""),
   authError = ref(""),
@@ -132,6 +133,7 @@ async function openAdmin() {
 async function authenticate() {
   if (busy.value) return;
   authError.value = "";
+  if(authMode.value === "register" && (!registrationNickname.value.trim() || Array.from(registrationNickname.value.trim()).length>24)){authError.value="请填写1–24字的个人昵称";return;}
   if (
     authMode.value === "register" &&
     password.value !== confirmPassword.value
@@ -145,6 +147,7 @@ async function authenticate() {
       username: username.value,
       password: password.value,
     };
+    if(authMode.value === "register") data.nickname=registrationNickname.value.trim();
     if (authMode.value === "register" && bindLegacy.value)
       data.legacy_token = uni.getStorageSync("mind-offline-token");
     const session = await request<{ token: string }>(
@@ -519,7 +522,7 @@ async function saveReceipt() {
           注册新账号
         </button></view
       >
-      <view class="field-label">用户名</view
+      <view class="field-label">登录账号</view
       ><input
         v-model="username"
         class="auth-input"
@@ -527,6 +530,7 @@ async function saveReceipt() {
         placeholder="3—24位字母、数字或下划线"
         :disabled="busy"
       />
+      <template v-if="authMode==='register'"><view class="field-label">个人昵称</view><input v-model="registrationNickname" class="auth-input" :maxlength="24" placeholder="你想让大家怎么称呼你（1–24字）" :disabled="busy"/><text class="registration-hint">账号用来登录，昵称用来展示；昵称以后可以修改。</text></template>
       <view class="field-label">密码</view
       ><input
         v-model="password"
@@ -570,7 +574,7 @@ async function saveReceipt() {
       }}</text>
       <button
         class="primary wide"
-        :disabled="busy || !username || !password"
+        :disabled="busy || !username || !password || (authMode==='register'&&!registrationNickname.trim())"
         @click="authenticate"
       >
         {{
@@ -596,11 +600,17 @@ async function saveReceipt() {
           ><text class="brand-en">MIND OFFLINE</text></view
         ></view
       ><view class="top-right"
-        ><text class="account-name">@{{ me.username }}</text
-        ><button v-if="me.is_admin" class="logout-button" @click="openAdmin">管理后台</button
+        >
+        <!-- #ifdef H5 -->
+        <button class="account-profile" @click="tab='profile'" aria-label="打开我的个人资料"><view class="top-avatar"><component :is="'img'" v-if="me.avatar_url" :src="me.avatar_url" alt="我的头像"/><text v-else>{{Array.from(me.nickname||me.username)[0]}}</text></view><view class="top-identity"><text class="top-nickname">{{me.nickname||me.username}}</text><text class="top-account">@{{me.username}}</text></view></button><button class="profile-entry" :class="{selected:tab==='profile'}" @click="tab='profile'">个人中心</button>
+        <!-- #endif -->
+        <!-- #ifdef MP-WEIXIN -->
+        <text class="account-name">@{{me.username}}</text>
+        <!-- #endif -->
+        <button v-if="me.is_admin" class="logout-button" @click="openAdmin">管理后台</button
         ><button class="logout-button" :disabled="busy" @click="signOut">
           退出</button
-        ><text class="open-dot"></text><text>人类补给中</text
+        ><text class="open-dot"></text><text class="header-status">人类补给中</text
         ><text class="edition">VOL. 001 / 不想上班</text></view
       ></view
     >
@@ -651,14 +661,13 @@ async function saveReceipt() {
         <button class="nav-item" :class="{ active: tab === 'slim' }" @click="tab = 'slim'"><text>⚖</text><text>瘦瘦研究所</text><text class="nav-index">06</text></button>
         <!-- #ifdef H5 -->
         <button class="nav-item" :class="{active:tab==='lobby'}" @click="tab='lobby'"><text>🐟</text><text>摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text v-else class="nav-index">07</text></button>
-        <button class="nav-item" :class="{active:tab==='profile'}" @click="tab='profile'"><text>☺</text><text>个人中心</text><text class="nav-index">08</text></button>
         <!-- #endif -->
         <button
           class="nav-item"
           :class="{ active: tab === 'about' }"
           @click="tab = 'about'"
           ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">09</text></button
+          ><text class="nav-index">08</text></button
         >
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
@@ -2467,6 +2476,8 @@ async function saveReceipt() {
   }
 }
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
+
+.registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 </style>
 
 <style>
@@ -2481,6 +2492,8 @@ async function saveReceipt() {
   }
 }
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
+
+.registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 </style>
 
 <style>
@@ -2491,6 +2504,8 @@ async function saveReceipt() {
   padding-bottom: 235px;
 }
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
+
+.registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 </style>
 
 <style>
@@ -2561,6 +2576,8 @@ async function saveReceipt() {
   }
 }
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
+
+.registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 </style>
 
 <style scoped>
@@ -2581,6 +2598,8 @@ async function saveReceipt() {
 .canteen-top-status { flex-basis: 100%; color: #a795b2; font-size: 10px; }
 @media (max-width: 760px) { .canteen-top-player { padding: 10px 10px 8px; gap: 8px; } .canteen-top-time { display: none; } .canteen-top-song { flex: 1; max-width: none; } .canteen-top-lyrics { order: 4; flex: 1 0 100%; } .canteen-top-status { order: 5; } .canteen-top-controls { gap: 2px; } .canteen-top-controls button { padding: 6px; } .canteen-top-title { font-size: 12px; } }
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
+
+.registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 </style>
 
 <style scoped>
@@ -2590,4 +2609,6 @@ async function saveReceipt() {
 .auto-order-track { height: 7px; margin-top: 10px; border-radius: 8px; overflow: hidden; background: #e1e5cd; }
 .auto-order-fill { height: 100%; border-radius: inherit; background: #a9bd73; transition: width .8s linear; }
 .lobby-badge{font-size:10px;background:#bd987e;color:#fff;padding:2px 6px;border-radius:10px;margin-left:auto;line-height:1.4;min-width:12px;text-align:center}
+
+.registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 </style>

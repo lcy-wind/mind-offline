@@ -189,3 +189,5 @@ CREATE TABLE IF NOT EXISTS account_avatars (
 
 ALTER TABLE lobby_reactions DROP CONSTRAINT IF EXISTS lobby_reactions_emoji_check;
 ALTER TABLE lobby_reactions ADD CONSTRAINT lobby_reactions_emoji_check CHECK(emoji IN ('🐟','😂','＋1','👍','❤️','🎉'));
+-- Give legacy accounts a personal nickname without overwriting chosen names.
+UPDATE accounts SET nickname=username WHERE nickname='';

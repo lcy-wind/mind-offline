@@ -79,6 +79,33 @@ func TestProfileIntegration(t *testing.T) {
 	if me.Nickname == "摸鱼队长" || me.MBTI != "" {
 		t.Fatal("profile crossed accounts")
 	}
+
+	if _, err = db.Exec(ctx, schema); err != nil {
+		t.Fatal(err)
+	}
+	var savedName string
+	db.QueryRow(ctx, "SELECT nickname FROM accounts WHERE id=$1", ids[0]).Scan(&savedName)
+	if savedName != "摸鱼队长" {
+		t.Fatal("migration overwrote chosen nickname")
+	}
+	db.QueryRow(ctx, "SELECT nickname FROM accounts WHERE id=$1", ids[1]).Scan(&savedName)
+	if savedName != "profileqa_"+ids[1] {
+		t.Fatal("legacy nickname not initialized")
+	}
+	registration := map[string]string{"username": "reg_" + token()[:8], "password": "test-password-123"}
+	call("POST", "/auth/register", "", registration, 400)
+	registration["nickname"] = "  新来的摸鱼员  "
+	var registered map[string]string
+	json.Unmarshal(call("POST", "/auth/register", "", registration, 201), &registered)
+	ids = append(ids, registered["id"])
+	if registered["nickname"] != "新来的摸鱼员" {
+		t.Fatal("nickname not stored at registration")
+	}
+	json.Unmarshal(call("GET", "/me", registered["token"], nil, 200), &me)
+	if me.Username != registration["username"] || me.Nickname != "新来的摸鱼员" {
+		t.Fatal("account and nickname not distinct")
+	}
+	call("POST", "/auth/login", "", map[string]string{"username": registration["username"], "password": registration["password"]}, 200)
 	var pngData bytes.Buffer
 	png.Encode(&pngData, image.NewRGBA(image.Rect(0, 0, 32, 32)))
 	req := httptest.NewRequest("POST", "/api/profile/avatar?account_id="+ids[1], bytes.NewReader(pngData.Bytes()))
