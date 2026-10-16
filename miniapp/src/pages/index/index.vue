@@ -657,7 +657,7 @@ async function saveReceipt() {
         <button class="nav-item lobby-entry" :class="{active:tab==='lobby'}" title="摸鱼大厅" @click="tab='lobby'"><text>🐟</text><text class="group-name">摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text></button>
         <view class="nav-groups">
           <view v-for="group in navGroups" :key="group.id" class="nav-group">
-            <button class="group-toggle" :class="{selected:group.items.some(i=>i.id===tab)}" :aria-expanded="expandedGroup===group.id&&!sidebarCollapsed" :title="group.name" @click="expandedGroup=sidebarCollapsed||expandedGroup!==group.id?group.id:'';sidebarCollapsed=false">
+            <button class="group-toggle" :class="{selected:expandedGroup===group.id&&!sidebarCollapsed}" :aria-expanded="expandedGroup===group.id&&!sidebarCollapsed" :title="group.name" @click="expandedGroup=sidebarCollapsed||expandedGroup!==group.id?group.id:'';sidebarCollapsed=false">
               <text>{{group.icon}}</text><text class="group-name">{{group.name}}</text><text class="group-arrow">{{expandedGroup===group.id?'−':'+'}}</text>
             </button>
             <view v-show="expandedGroup===group.id&&!sidebarCollapsed" class="group-items">
@@ -2628,4 +2628,9 @@ async function saveReceipt() {
 
 <style scoped>
 .sidebar .lobby-entry{position:relative;margin:0 0 12px;padding:13px 10px;border:1px solid #dce4cf;border-radius:10px;background:#e9efdf;color:#6e805b;font-size:13px}.sidebar .lobby-entry.active{background:#272c25;color:#f8f7f0;border-color:#272c25}.sidebar-collapsed .lobby-entry{justify-content:center;padding:13px 0}.sidebar-collapsed .lobby-entry .lobby-badge{position:absolute;top:-5px;right:-4px;font-size:8px}@media(max-width:760px){.sidebar .lobby-entry{width:100%;justify-content:flex-start;padding:10px 12px;margin-bottom:8px;font-size:12px}.sidebar-collapsed .lobby-entry .lobby-badge{position:static;font-size:10px}}
+</style>
+
+<style scoped>
+.nav-groups .group-toggle.selected{background:#dfe8cf;color:#52673f;box-shadow:inset 0 0 0 1.5px #a4b98a;font-weight:700}.nav-groups .group-toggle.selected .group-arrow{color:#52673f}
+@media(max-width:760px){.nav-groups .group-toggle.selected{background:#788d60;color:#fff;box-shadow:inset 0 0 0 2px #62784b}.nav-groups .group-toggle.selected .group-name{color:#fff}}
 </style>
