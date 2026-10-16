@@ -3,5 +3,6 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig({
   base: "/admin/",
   plugins: [vue()],
+  resolve: { dedupe: ["vue"] },
   server: { host: "127.0.0.1", proxy: { "/api": "http://127.0.0.1:18082" } },
 });

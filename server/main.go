@@ -278,6 +278,7 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/orders", a.customer(a.limited("order:", 30, a.createOrder)))
 	m.HandleFunc("POST /api/admin/session", a.customer(a.openAdminSession))
 	m.HandleFunc("GET /api/admin/me", a.admin(a.adminMe))
+	m.HandleFunc("GET /api/admin/beads", a.admin(a.adminBeadList))
 	m.HandleFunc("GET /api/admin/work-customers", a.admin(a.adminWorkCustomers))
 	m.HandleFunc("GET /api/admin/customers/{id}/work-tasks", a.admin(a.adminWorkList))
 	m.HandleFunc("GET /api/admin/customers/{id}/work-tasks/export", a.admin(a.adminWorkExport))

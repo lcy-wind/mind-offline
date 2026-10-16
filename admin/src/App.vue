@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import HealingAdmin from "./HealingAdmin.vue";
 import WorkAdmin from "./WorkAdmin.vue";
+import BeadsAdmin from "./BeadsAdmin.vue";
 const workAccount=ref("");
 const healingAccount = ref("");
 let authEpoch=0;
@@ -144,6 +145,7 @@ const labels: Record<string, string> = {
   cancelled: "已取消",
 };
 const sections = [
+  {id:"beads",icon:"✿",name:"拼豆作品集",en:"BEAD GALLERY"},
   {id:"work",icon:"▤",name:"顾客工作记录",en:"WORK RECORDS"},
   { id:"healing", icon:"☁", name:"AI 会话", en:"CONVERSATIONS" },
   { id: "overview", icon: "◈", name: "经营概览", en: "OVERVIEW" },
@@ -1000,6 +1002,7 @@ onUnmounted(() => {
             </div>
           </div>
         </section>
+        <BeadsAdmin v-if="tab === 'beads'" :api="api" />
         <WorkAdmin v-if="tab === 'work'" :api="api" :download="downloadWorkReport" :account-id="workAccount" :key="workAccount" />
         <HealingAdmin v-if="tab === 'healing'" :api="api" :account-id="healingAccount" :key="healingAccount" />
         <footer>
