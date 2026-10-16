@@ -15,6 +15,12 @@ import {defineAsyncComponent} from "vue";
 const BeadStudio=defineAsyncComponent(()=>import("../../components/BeadStudio.vue"));
 // #endif
 const lobbyUnread = ref(0);
+// #ifdef H5
+function updateLobbyTitle(){document.title=lobbyUnread.value>0?'('+lobbyUnread.value+') 精神离职':'精神离职';}
+watch(lobbyUnread,updateLobbyTitle,{flush:'post'});
+onMounted(updateLobbyTitle);
+onUnmounted(()=>{document.title='精神离职';});
+// #endif
 const beadsOpened=ref(false);
 import MiniPlayer from "../../components/MiniPlayer.vue";
 import NowPlayingLyrics from "../../components/NowPlayingLyrics.vue";
