@@ -46,7 +46,7 @@ const tab = ref("menu"),
   orders = ref<Order[]>([]);
 const navGroups=[
  {id:'supply',icon:'🍱',name:'精神补给',items:[{id:'menu',icon:'↗',name:'补给菜单'},{id:'orders',icon:'≡',name:'我的离职单'}]},
- {id:'social',icon:'💬',name:'摸鱼社交',items:[{id:'lobby',icon:'🐟',name:'摸鱼大厅'},{id:'healing',icon:'☁',name:'精神疗愈'},{id:'music',icon:'♫',name:'音乐实验室'}]},
+ {id:'social',icon:'💬',name:'摸鱼社交',items:[{id:'healing',icon:'☁',name:'精神疗愈'},{id:'music',icon:'♫',name:'音乐实验室'}]},
  {id:'tools',icon:'🧰',name:'牛马自救',items:[{id:'work',icon:'▤',name:'牛马痛苦区'},{id:'slim',icon:'⚖',name:'瘦瘦研究所'}]},
  {id:'games',icon:'🎮',name:'带薪游乐场',items:[{id:'beads',icon:'✿',name:'电子拼豆'}]}
 ];
@@ -648,10 +648,11 @@ async function saveReceipt() {
     <view class="layout" :class="{'sidebar-collapsed':sidebarCollapsed}">
       <view class="sidebar">
         <view class="nav-heading"><text class="side-title">今日营业，精神随缘。</text><button class="sidebar-toggle" @click="sidebarCollapsed=!sidebarCollapsed" :aria-label="sidebarCollapsed?'展开侧栏':'收起侧栏'">{{sidebarCollapsed?'☰':'‹'}}</button></view>
+        <button class="nav-item lobby-entry" :class="{active:tab==='lobby'}" title="摸鱼大厅" @click="tab='lobby'"><text>🐟</text><text class="group-name">摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text></button>
         <view class="nav-groups">
           <view v-for="group in navGroups" :key="group.id" class="nav-group">
             <button class="group-toggle" :class="{selected:group.items.some(i=>i.id===tab)}" :aria-expanded="expandedGroup===group.id&&!sidebarCollapsed" :title="group.name" @click="expandedGroup=sidebarCollapsed||expandedGroup!==group.id?group.id:'';sidebarCollapsed=false">
-              <text>{{group.icon}}</text><text class="group-name">{{group.name}}</text><text v-if="group.id==='social'&&lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text class="group-arrow">{{expandedGroup===group.id?'−':'+'}}</text>
+              <text>{{group.icon}}</text><text class="group-name">{{group.name}}</text><text class="group-arrow">{{expandedGroup===group.id?'−':'+'}}</text>
             </button>
             <view v-show="expandedGroup===group.id&&!sidebarCollapsed" class="group-items">
               <button v-for="item in group.items" :key="item.id" class="nav-item" :class="{active:tab===item.id}" @click="selectNav(item.id)"><text>{{item.icon}}</text><text>{{item.name}}</text><text v-if="item.id==='orders'&&active" class="nav-index">{{active}}</text></button>
@@ -2617,4 +2618,8 @@ async function saveReceipt() {
 
 <style scoped>
 @media(max-width:760px){.nav-groups{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.nav-group{display:contents}.nav-groups .group-toggle{grid-row:1;flex-direction:column;justify-content:center;gap:3px;padding:9px 2px;font-size:10px;position:relative}.group-toggle .group-arrow{display:none}.group-toggle .lobby-badge{position:absolute;right:0;top:-4px;font-size:8px}.group-items{grid-row:2;grid-column:1/-1;display:flex;gap:5px;border:0;padding:0;margin:2px 0}.sidebar .group-items .nav-item{flex:1;justify-content:center;padding:10px 3px;font-size:11px;margin:0;gap:5px}.sidebar .guide-nav{margin:4px 0;padding:6px 3px;font-size:10px}}
+</style>
+
+<style scoped>
+.sidebar .lobby-entry{position:relative;margin:0 0 12px;padding:13px 10px;border:1px solid #dce4cf;border-radius:10px;background:#e9efdf;color:#6e805b;font-size:13px}.sidebar .lobby-entry.active{background:#272c25;color:#f8f7f0;border-color:#272c25}.sidebar-collapsed .lobby-entry{justify-content:center;padding:13px 0}.sidebar-collapsed .lobby-entry .lobby-badge{position:absolute;top:-5px;right:-4px;font-size:8px}@media(max-width:760px){.sidebar .lobby-entry{width:100%;justify-content:flex-start;padding:10px 12px;margin-bottom:8px;font-size:12px}.sidebar-collapsed .lobby-entry .lobby-badge{position:static;font-size:10px}}
 </style>
