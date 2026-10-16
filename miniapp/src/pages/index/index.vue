@@ -44,6 +44,16 @@ const tab = ref("menu"),
   menu = ref<Dish[]>([]),
   me = ref<Guest>({ id: "", username: "", balance: 0, claimed_today: false }),
   orders = ref<Order[]>([]);
+const navGroups=[
+ {id:'supply',icon:'🍱',name:'精神补给',items:[{id:'menu',icon:'↗',name:'补给菜单'},{id:'orders',icon:'≡',name:'我的离职单'}]},
+ {id:'social',icon:'💬',name:'摸鱼社交',items:[{id:'lobby',icon:'🐟',name:'摸鱼大厅'},{id:'healing',icon:'☁',name:'精神疗愈'},{id:'music',icon:'♫',name:'音乐实验室'}]},
+ {id:'tools',icon:'🧰',name:'牛马自救',items:[{id:'work',icon:'▤',name:'牛马痛苦区'},{id:'slim',icon:'⚖',name:'瘦瘦研究所'}]},
+ {id:'games',icon:'🎮',name:'带薪游乐场',items:[{id:'beads',icon:'✿',name:'电子拼豆'}]}
+];
+const expandedGroup=ref('supply'),sidebarCollapsed=ref(false),sharedLobbyID=ref(0);
+watch(tab,value=>{const group=navGroups.find(g=>g.items.some(i=>i.id===value));if(group)expandedGroup.value=group.id;});
+function selectNav(id:string){tab.value=id;if(id==='orders')void refresh();}
+function openSharedBeads(id:number){sharedLobbyID.value=id;tab.value='lobby';}
 watch(tab, value => { if (value === "healing") healingOpened.value = true; if (value === "work") workOpened.value = true; if (value === "slim") slimOpened.value = true; if(value==="beads")beadsOpened.value=true; }, {flush: "sync"});
 const loading = ref(true),
   error = ref(""),
@@ -635,47 +645,20 @@ async function saveReceipt() {
       </view>
       <text class="canteen-top-status" role="status">{{ canteenPlayback.message }}</text>
     </view>
-    <view class="layout">
+    <view class="layout" :class="{'sidebar-collapsed':sidebarCollapsed}">
       <view class="sidebar">
-        <view class="side-title">今日营业，精神随缘。</view>
-        <button
-          class="nav-item"
-          :class="{ active: tab === 'menu' }"
-          @click="tab = 'menu'"
-          ><text>↗</text><text>补给菜单</text
-          ><text class="nav-index">01</text></button
-        >
-        <button
-          class="nav-item"
-          :class="{ active: tab === 'orders' }"
-          @click="
-            tab = 'orders';
-            refresh();
-          "
-          ><text>≡</text><text>我的离职单</text
-          ><text class="nav-index">{{ active || "02" }}</text></button
-        >
-        <button
-          class="nav-item"
-          :class="{ active: tab === 'music' }"
-          @click="tab = 'music'"
-          ><text>♫</text><text>音乐实验室</text
-          ><text class="nav-index">03</text></button
-        >
-        <button class="nav-item" :class="{ active: tab === 'healing' }" @click="tab = 'healing'"><text>☁</text><text>精神疗愈</text><text class="nav-index">04</text></button>
-        <button class="nav-item" :class="{ active: tab === 'work' }" @click="tab = 'work'"><text>▤</text><text>牛马痛苦区</text><text class="nav-index">05</text></button>
-        <button class="nav-item" :class="{ active: tab === 'slim' }" @click="tab = 'slim'"><text>⚖</text><text>瘦瘦研究所</text><text class="nav-index">06</text></button>
-        <!-- #ifdef H5 -->
-        <button class="nav-item" :class="{active:tab==='lobby'}" @click="tab='lobby'"><text>🐟</text><text>摸鱼大厅</text><text v-if="lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text v-else class="nav-index">07</text></button>
-        <button class="nav-item" :class="{active:tab==='beads'}" @click="tab='beads'"><text>✿</text><text>电子拼豆</text><text class="nav-index">08</text></button>
-        <!-- #endif -->
-        <button
-          class="nav-item"
-          :class="{ active: tab === 'about' }"
-          @click="tab = 'about'"
-          ><text>✳</text><text>食堂生存指南</text
-          ><text class="nav-index">09</text></button
-        >
+        <view class="nav-heading"><text class="side-title">今日营业，精神随缘。</text><button class="sidebar-toggle" @click="sidebarCollapsed=!sidebarCollapsed" :aria-label="sidebarCollapsed?'展开侧栏':'收起侧栏'">{{sidebarCollapsed?'☰':'‹'}}</button></view>
+        <view class="nav-groups">
+          <view v-for="group in navGroups" :key="group.id" class="nav-group">
+            <button class="group-toggle" :class="{selected:group.items.some(i=>i.id===tab)}" :aria-expanded="expandedGroup===group.id&&!sidebarCollapsed" :title="group.name" @click="expandedGroup=sidebarCollapsed||expandedGroup!==group.id?group.id:'';sidebarCollapsed=false">
+              <text>{{group.icon}}</text><text class="group-name">{{group.name}}</text><text v-if="group.id==='social'&&lobbyUnread" class="lobby-badge">{{lobbyUnread>99?'99+':lobbyUnread}}</text><text class="group-arrow">{{expandedGroup===group.id?'−':'+'}}</text>
+            </button>
+            <view v-show="expandedGroup===group.id&&!sidebarCollapsed" class="group-items">
+              <button v-for="item in group.items" :key="item.id" class="nav-item" :class="{active:tab===item.id}" @click="selectNav(item.id)"><text>{{item.icon}}</text><text>{{item.name}}</text><text v-if="item.id==='orders'&&active" class="nav-index">{{active}}</text></button>
+            </view>
+          </view>
+        </view>
+        <button class="nav-item guide-nav" :class="{active:tab==='about'}" title="食堂生存指南" @click="tab='about'"><text>✳</text><text class="group-name">食堂生存指南</text></button>
         <view class="wallet"
           ><text class="eyebrow">精神补偿金 / WALLET</text
           ><view class="wallet-value">{{ me.balance }}<text>精神值</text></view
@@ -889,9 +872,9 @@ async function saveReceipt() {
         />
         <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
         <!-- #ifdef H5 -->
-        <BeadStudio v-if="me.id && beadsOpened" v-show="tab==='beads'" :key="me.id" :account-id="me.id" :foreground="tab==='beads'" @auth-expired="forgetSession" />
+        <BeadStudio v-if="me.id && beadsOpened" v-show="tab==='beads'" :key="me.id" :account-id="me.id" :foreground="tab==='beads'" @shared="openSharedBeads" @auth-expired="forgetSession" />
         <PersonalCenter v-if="me.id && tab==='profile'" :key="me.id" :me="me" @updated="me=$event" @auth-expired="forgetSession" />
-        <LobbyHall v-if="me.id" v-show="tab==='lobby'" :key="me.id" :me="me" :foreground="tab==='lobby'" @auth-expired="forgetSession" @unread="lobbyUnread=$event"/>
+        <LobbyHall v-if="me.id" v-show="tab==='lobby'" :key="me.id" :me="me" :foreground="tab==='lobby'" :shared-message-id="sharedLobbyID" @auth-expired="forgetSession" @unread="lobbyUnread=$event"/>
         <!-- #endif -->
         <SlimLab v-if="me.id && slimOpened" v-show="tab === 'slim'" :key="me.id" :foreground="tab === 'slim'" @auth-expired="forgetSession" />
         <WorkTasks v-if="me.id && workOpened" v-show="tab === 'work'" :key="me.id" :foreground="tab === 'work'" @auth-expired="forgetSession" />
@@ -2625,4 +2608,13 @@ async function saveReceipt() {
 
 .registration-hint{display:block;font-size:11px;color:#9c9d88;line-height:1.8;margin-top:8px}.top-right .account-profile{display:flex;align-items:center;gap:9px;background:transparent;border:0;padding:5px 4px;line-height:1.5;margin:0;text-align:left;border-radius:12px}.account-profile::after,.profile-entry::after{border:0}.top-avatar{width:38px;height:38px;border-radius:13px;overflow:hidden;background:linear-gradient(135deg,#dfe8cd,#ede4ee);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#8b9975;font-size:19px}.top-avatar img{width:100%;height:100%;object-fit:cover}.top-identity{min-width:0;max-width:140px}.top-identity text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.top-nickname{font-size:13px;color:#768461;font-weight:600}.top-account{font-size:10px;color:#a6ad98;margin-top:2px}.top-right .profile-entry{font-size:11px;background:#edf1e2;color:#8c9b74;border:1px solid #dce4cd;border-radius:9px;padding:7px 10px;margin:0;line-height:1.5;white-space:nowrap}.profile-entry.selected{background:#e1e9d0;color:#788d59}.account-profile:focus-visible,.profile-entry:focus-visible{outline:2px solid #9eae85;outline-offset:2px}@media(max-width:760px){.topbar{height:auto;min-height:82px;flex-wrap:wrap;gap:14px;padding:18px 0}.top-right{margin-left:auto;max-width:100%;gap:6px;flex-wrap:wrap;justify-content:flex-end}.top-identity{max-width:90px}.top-nickname{font-size:12px}.top-account{font-size:9px}.top-avatar{width:31px;height:31px;border-radius:11px;font-size:16px}.top-right .profile-entry{font-size:10px;padding:6px 8px}.header-status{display:none}}
 .registration-gender{display:flex;gap:10px}.registration-gender button{flex:1;padding:11px;border-radius:10px;border:1px solid #dfe4d3;background:#f6f7ee;color:#9ca789;font-size:13px}.registration-gender button.selected{background:#e4ecd3;border-color:#a9bb8b;color:#738859}
+</style>
+
+<style scoped>
+.nav-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.nav-heading .side-title{margin:0;font-size:10px}.sidebar-toggle{margin:0;padding:3px 10px;background:#ebeede;border:0;border-radius:8px;color:#7f8b6e;font-size:20px;line-height:1.4}.sidebar-toggle::after,.group-toggle::after{border:0}.nav-groups{display:flex;flex-direction:column;gap:9px}.group-toggle{display:flex;align-items:center;gap:9px;width:100%;padding:12px 10px;margin:0;background:transparent;border:0;border-radius:10px;text-align:left;font-size:12px;color:#818973;line-height:1.6}.group-toggle.selected{background:#e9eddf;color:#657653}.group-arrow{margin-left:auto;font-size:14px;color:#a3ad94}.group-items{margin:5px 0 7px 12px;padding-left:9px;border-left:1px solid #dce2d1}.sidebar .group-items .nav-item{padding:10px 9px;margin:3px 0;font-size:12px;gap:9px}.sidebar .group-items .nav-item>text:first-child{font-size:17px}.sidebar .guide-nav{margin-top:20px;font-size:11px;color:#909781}.sidebar-collapsed .sidebar{width:56px}.sidebar-collapsed .nav-heading{justify-content:center}.sidebar-collapsed .side-title,.sidebar-collapsed .group-name,.sidebar-collapsed .group-arrow,.sidebar-collapsed .wallet,.sidebar-collapsed .side-note{display:none}.sidebar-collapsed .group-toggle{justify-content:center;padding:12px 3px}.sidebar-collapsed .group-toggle .lobby-badge{position:absolute;font-size:8px;right:0;top:0}.sidebar-collapsed .guide-nav{justify-content:center;padding:10px 0}.group-toggle:focus-visible,.sidebar-toggle:focus-visible{outline:2px solid #a2b786;outline-offset:2px}
+@media(max-width:760px){.layout .sidebar{display:block;width:100%}.nav-heading{display:none}.nav-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.group-toggle{font-size:12px;padding:10px;background:#eeefe4}.group-items{margin:5px 0;padding-left:5px}.sidebar .group-items .nav-item{justify-content:flex-start;font-size:12px;padding:10px 8px}.sidebar .guide-nav{width:auto;margin:7px 0 10px;padding:8px;justify-content:flex-start}.sidebar-collapsed .group-name,.sidebar-collapsed .group-arrow{display:block}.sidebar-collapsed .group-toggle{justify-content:flex-start;padding:10px}.sidebar-collapsed .wallet{display:flex}.sidebar .wallet{margin-top:8px}}
+</style>
+
+<style scoped>
+@media(max-width:760px){.nav-groups{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.nav-group{display:contents}.nav-groups .group-toggle{grid-row:1;flex-direction:column;justify-content:center;gap:3px;padding:9px 2px;font-size:10px;position:relative}.group-toggle .group-arrow{display:none}.group-toggle .lobby-badge{position:absolute;right:0;top:-4px;font-size:8px}.group-items{grid-row:2;grid-column:1/-1;display:flex;gap:5px;border:0;padding:0;margin:2px 0}.sidebar .group-items .nav-item{flex:1;justify-content:center;padding:10px 3px;font-size:11px;margin:0;gap:5px}.sidebar .guide-nav{margin:4px 0;padding:6px 3px;font-size:10px}}
 </style>

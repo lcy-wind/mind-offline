@@ -241,3 +241,108 @@ func TestLobbyHub(t *testing.T) {
 	for range slow.events {
 	}
 }
+
+func TestLobbyBeadShareIntegration(t *testing.T) {
+	dsn := os.Getenv("ADMIN_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("requires disposable PostgreSQL")
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(ctx, schema); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{token(), token()}
+	sessions := []string{token(), token()}
+	defer func() {
+		for _, id := range ids {
+			db.Exec(ctx, "DELETE FROM accounts WHERE id=$1", id)
+			db.Exec(ctx, "DELETE FROM guests WHERE id=$1", id)
+		}
+	}()
+	for i, id := range ids {
+		if _, err = db.Exec(ctx, "INSERT INTO guests(id,token_hash) VALUES($1,$2)", id, hash(id)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(ctx, "INSERT INTO accounts(id,username,password_hash) VALUES($1,$2,'test-only')", id, "lobbyqa_"+id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(ctx, "INSERT INTO customer_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '1 hour')", hash(sessions[i]), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := &app{db: db, adminAccountID: ids[0]}
+	handler := a.routes()
+	call := func(method, path, session string, body any, want int) []byte {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		r := httptest.NewRequest(method, "/api/lobby"+path, bytes.NewReader(b))
+		r.Header.Set("Authorization", "Bearer "+session)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("%s %s: %d %s", method, path, w.Code, w.Body.String())
+		}
+		return w.Body.Bytes()
+	}
+
+	work := beadData{Name: "摸鱼艺术", Size: 8, Mode: "guided", Palette: "mard-291-v1", Pixels: make([]int, 64), Target: make([]int, 64)}
+	work.Pixels[0] = 291
+	work.Target[0] = 291
+	work.Target[1] = 7
+	data, _ := json.Marshal(work)
+	if _, err = db.Exec(ctx, "INSERT INTO bead_works(account_id,id,data) VALUES($1,'share_work_123456789',$2)", ids[0], data); err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"request_id": "share_request_12345678", "bead_id": "share_work_123456789", "bead_revision": 1}
+	call("POST", "/messages", sessions[1], body, 404)
+	body["bead_revision"] = 2
+	call("POST", "/messages", sessions[0], body, 409)
+	body["bead_revision"] = 1
+	var sent struct {
+		ID int64 `json:"id"`
+	}
+	json.Unmarshal(call("POST", "/messages", sessions[0], body, 201), &sent)
+	var again struct {
+		ID int64 `json:"id"`
+	}
+	json.Unmarshal(call("POST", "/messages", sessions[0], body, 200), &again)
+	if sent.ID == 0 || sent.ID != again.ID {
+		t.Fatal("share retry duplicated")
+	}
+	body["bead_revision"] = 2
+	call("POST", "/messages", sessions[0], body, 409)
+	body["bead_revision"] = 1
+	db.Exec(ctx, "DELETE FROM bead_works WHERE account_id=$1", ids[0])
+	var list struct {
+		Messages []lobbyMessage `json:"messages"`
+	}
+	json.Unmarshal(call("GET", "/messages", sessions[1], nil, 200), &list)
+	if len(list.Messages) != 1 {
+		t.Fatal("missing shared card")
+	}
+	card := list.Messages[0].BeadShare
+	if card == nil || card.Data.Pixels[0] != 291 || card.Data.Palette != "mard-291-v1" || len(card.Data.Target) != 0 {
+		t.Fatal("snapshot changed or private reference leaked")
+	}
+	call("POST", "/messages", sessions[0], body, 200)
+	call("POST", fmt.Sprint("/messages/", sent.ID, "/retract"), sessions[0], nil, 200)
+	list.Messages = nil
+	json.Unmarshal(call("GET", "/messages", sessions[1], nil, 200), &list)
+	if list.Messages[0].BeadShare != nil || list.Messages[0].Status != "retracted" {
+		t.Fatal("retracted card still visible")
+	}
+	// Empty works and muted users cannot publish cards.
+	work.Pixels[0] = 0
+	data, _ = json.Marshal(work)
+	db.Exec(ctx, "INSERT INTO bead_works(account_id,id,data) VALUES($1,'empty_work_123456789',$2)", ids[0], data)
+	body["request_id"] = "empty_request_12345678"
+	body["bead_id"] = "empty_work_123456789"
+	call("POST", "/messages", sessions[0], body, 400)
+	db.Exec(ctx, "UPDATE lobby_members SET muted_until=now()+interval '1 hour' WHERE account_id=$1", ids[0])
+	call("POST", "/messages", sessions[0], body, 403)
+}

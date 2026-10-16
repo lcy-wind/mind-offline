@@ -108,7 +108,14 @@ func (a *app) lobbyStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type lobbyBeadShare struct {
+	WorkID   string   `json:"work_id"`
+	Revision int      `json:"revision"`
+	Data     beadData `json:"data"`
+}
+
 type lobbyMessage struct {
+	BeadShare *lobbyBeadShare `json:"bead_share,omitempty"`
 	ReadCount int             `json:"read_count"`
 	Nickname  string          `json:"nickname"`
 	MBTI      string          `json:"mbti"`
@@ -125,12 +132,12 @@ type lobbyMessage struct {
 	Reactions json.RawMessage `json:"reactions"`
 }
 
-const lobbySelect = `SELECT COALESCE(NULLIF(a.nickname,''),a.username),a.mbti,COALESCE((SELECT '/api/avatars/'||v.account_id||'?v='||v.version FROM account_avatars v WHERE v.account_id=a.id),''),m.id,m.account_id,a.username,m.request_id,m.content,m.status,m.created_at,m.updated_at,
+const lobbySelect = `SELECT COALESCE(NULLIF(a.nickname,''),a.username),a.mbti,COALESCE((SELECT '/api/avatars/'||v.account_id||'?v='||v.version FROM account_avatars v WHERE v.account_id=a.id),''),m.id,m.account_id,a.username,m.request_id,m.content,m.status,m.created_at,m.updated_at,CASE WHEN m.status='active' THEN m.bead_share ELSE NULL END,
  COALESCE((SELECT jsonb_agg(x) FROM (SELECT emoji,count(*) AS count,bool_or(account_id=$1) AS mine FROM lobby_reactions WHERE message_id=m.id AND m.status='active' GROUP BY emoji ORDER BY emoji) x),'[]'::jsonb),CASE WHEN m.account_id=$1 AND m.status='active' THEN (SELECT count(*) FROM lobby_message_reads r WHERE r.message_id=m.id AND r.account_id<>m.account_id) ELSE 0 END
  FROM lobby_messages m JOIN accounts a ON a.id=m.account_id `
 
 func scanLobby(row pgx.Row) (m lobbyMessage, err error) {
-	err = row.Scan(&m.Nickname, &m.MBTI, &m.AvatarURL, &m.ID, &m.AccountID, &m.Username, &m.RequestID, &m.Content, &m.Status, &m.CreatedAt, &m.UpdatedAt, &m.Reactions, &m.ReadCount)
+	err = row.Scan(&m.Nickname, &m.MBTI, &m.AvatarURL, &m.ID, &m.AccountID, &m.Username, &m.RequestID, &m.Content, &m.Status, &m.CreatedAt, &m.UpdatedAt, &m.BeadShare, &m.Reactions, &m.ReadCount)
 	return
 }
 func lobbyID(r *http.Request) (int64, error) { return strconv.ParseInt(r.PathValue("id"), 10, 64) }
@@ -223,13 +230,18 @@ func (a *app) lobbyRead(w http.ResponseWriter, r *http.Request) {
 }
 func (a *app) lobbySend(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		ID      string `json:"request_id"`
-		Content string `json:"content"`
+		ID           string `json:"request_id"`
+		BeadID       string `json:"bead_id"`
+		BeadRevision int    `json:"bead_revision"`
+		Content      string `json:"content"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
 	in.Content = strings.TrimSpace(in.Content)
+	if in.BeadID != "" {
+		in.Content = "晒晒摸鱼成果 · 今天的班没白摸"
+	}
 	if utf8.RuneCountInString(in.Content) < 1 || utf8.RuneCountInString(in.Content) > 1000 || len(in.ID) < 16 || len(in.ID) > 80 || strings.Trim(in.ID, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
 		fail(w, 400, "消息需为1–1000字，请勿发送空白消息")
 		return
@@ -252,9 +264,10 @@ func (a *app) lobbySend(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	var previous string
-	err = tx.QueryRow(r.Context(), "SELECT id,content FROM lobby_messages WHERE account_id=$1 AND request_id=$2", owner, in.ID).Scan(&id, &previous)
+	var previousShare *lobbyBeadShare
+	err = tx.QueryRow(r.Context(), "SELECT id,content,bead_share FROM lobby_messages WHERE account_id=$1 AND request_id=$2", owner, in.ID).Scan(&id, &previous, &previousShare)
 	if err == nil {
-		if previous != in.Content {
+		if previous != in.Content || (previousShare == nil && in.BeadID != "") || (previousShare != nil && (previousShare.WorkID != in.BeadID || previousShare.Revision != in.BeadRevision)) {
 			fail(w, 409, "这条消息已处理，请刷新确认")
 			return
 		}
@@ -278,7 +291,38 @@ func (a *app) lobbySend(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "泡泡吐得太快啦，每分钟最多20条，歇一下再聊")
 		return
 	}
-	err = tx.QueryRow(r.Context(), "INSERT INTO lobby_messages(account_id,request_id,content) VALUES($1,$2,$3) RETURNING id", owner, in.ID, in.Content).Scan(&id)
+	var share *lobbyBeadShare
+	if in.BeadID != "" {
+		work, e := scanBeads(tx.QueryRow(r.Context(), "SELECT "+beadColumns+" FROM bead_works WHERE account_id=$1 AND id=$2", owner, in.BeadID))
+		if errors.Is(e, pgx.ErrNoRows) {
+			fail(w, 404, "作品不存在或已删除")
+			return
+		}
+		if e != nil {
+			a.internal(w, e)
+			return
+		}
+		if work.Revision != in.BeadRevision {
+			fail(w, 409, "作品已更新，请刷新作品库后再晒")
+			return
+		}
+		filled := false
+		for _, color := range work.Data.Pixels {
+			if color > 0 {
+				filled = true
+				break
+			}
+		}
+		if !filled {
+			fail(w, 400, "还没放豆呢，先拼一点再来晒吧")
+			return
+		}
+		// Publish only placed beads, never the private reference template.
+		work.Data.Target = []int{}
+		work.Data.Mode = "free"
+		share = &lobbyBeadShare{WorkID: work.ID, Revision: work.Revision, Data: work.Data}
+	}
+	err = tx.QueryRow(r.Context(), "INSERT INTO lobby_messages(account_id,request_id,content,bead_share) VALUES($1,$2,$3,$4) RETURNING id", owner, in.ID, in.Content, share).Scan(&id)
 	if err == nil {
 		err = tx.Commit(r.Context())
 	}
@@ -295,7 +339,7 @@ func (a *app) lobbyRetract(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "消息编号不正确")
 		return
 	}
-	result, err := a.db.Exec(r.Context(), "UPDATE lobby_messages SET content='',status='retracted',updated_at=clock_timestamp() WHERE id=$1 AND account_id=$2 AND status='active' AND created_at>=now()-interval '2 minutes'", id, r.Context().Value(guestKey))
+	result, err := a.db.Exec(r.Context(), "UPDATE lobby_messages SET content='',bead_share=NULL,status='retracted',updated_at=clock_timestamp() WHERE id=$1 AND account_id=$2 AND status='active' AND created_at>=now()-interval '2 minutes'", id, r.Context().Value(guestKey))
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -384,7 +428,7 @@ func (a *app) lobbyModerate(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "消息编号不正确")
 			return
 		}
-		res, err := a.db.Exec(r.Context(), "UPDATE lobby_messages SET content='',status='removed',updated_at=clock_timestamp() WHERE id=$1", id)
+		res, err := a.db.Exec(r.Context(), "UPDATE lobby_messages SET content='',bead_share=NULL,status='removed',updated_at=clock_timestamp() WHERE id=$1", id)
 		if err != nil {
 			a.internal(w, err)
 			return

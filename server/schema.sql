@@ -204,3 +204,5 @@ CREATE TABLE IF NOT EXISTS bead_works (
  PRIMARY KEY(account_id,id)
 );
 CREATE INDEX IF NOT EXISTS bead_works_owner_updated ON bead_works(account_id,updated_at DESC,id);
+
+ALTER TABLE lobby_messages ADD COLUMN IF NOT EXISTS bead_share jsonb;
