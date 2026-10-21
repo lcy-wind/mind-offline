@@ -206,3 +206,24 @@ CREATE TABLE IF NOT EXISTS bead_works (
 CREATE INDEX IF NOT EXISTS bead_works_owner_updated ON bead_works(account_id,updated_at DESC,id);
 
 ALTER TABLE lobby_messages ADD COLUMN IF NOT EXISTS bead_share jsonb;
+
+CREATE TABLE IF NOT EXISTS gomoku_games (
+ id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS gomoku_table (id integer PRIMARY KEY CHECK(id=1),game_id text REFERENCES gomoku_games(id));
+INSERT INTO gomoku_table(id) VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS gomoku_bets (
+ game_id text NOT NULL REFERENCES gomoku_games(id),account_id text NOT NULL REFERENCES accounts(id),
+ lane text NOT NULL CHECK(lane IN ('player','audience')),side integer NOT NULL CHECK(side IN (1,2)),
+ amount integer NOT NULL CHECK(amount BETWEEN 0 AND 100),payout integer NOT NULL DEFAULT 0 CHECK(payout>=0),settled boolean NOT NULL DEFAULT false,
+ PRIMARY KEY(game_id,account_id)
+);
+CREATE TABLE IF NOT EXISTS gomoku_requests (
+ account_id text NOT NULL REFERENCES accounts(id),request_id text NOT NULL,fingerprint text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(account_id,request_id)
+);
+CREATE TABLE IF NOT EXISTS gomoku_ledger (
+ id bigserial PRIMARY KEY,game_id text NOT NULL REFERENCES gomoku_games(id),account_id text NOT NULL REFERENCES accounts(id),
+ event_key text NOT NULL,lane text NOT NULL,delta integer NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(game_id,account_id,event_key)
+);

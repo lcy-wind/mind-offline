@@ -12,6 +12,8 @@ const slimOpened = ref(false);
 import LobbyHall from "../../components/LobbyHall.vue";
 import PersonalCenter from "../../components/PersonalCenter.vue";
 import {defineAsyncComponent} from "vue";
+const GomokuRoom=defineAsyncComponent(()=>import("../../components/GomokuRoom.vue"));
+const gomokuOpened=ref(false);
 const BeadStudio=defineAsyncComponent(()=>import("../../components/BeadStudio.vue"));
 // #endif
 const lobbyUnread = ref(0);
@@ -54,13 +56,13 @@ const navGroups=[
  {id:'supply',icon:'🍱',name:'精神补给',items:[{id:'menu',icon:'↗',name:'补给菜单'},{id:'orders',icon:'≡',name:'我的离职单'}]},
  {id:'social',icon:'💬',name:'摸鱼社交',items:[{id:'healing',icon:'☁',name:'精神疗愈'},{id:'music',icon:'♫',name:'音乐实验室'}]},
  {id:'tools',icon:'🧰',name:'牛马自救',items:[{id:'work',icon:'▤',name:'牛马痛苦区'},{id:'slim',icon:'⚖',name:'瘦瘦研究所'}]},
- {id:'games',icon:'🎮',name:'带薪游乐场',items:[{id:'beads',icon:'✿',name:'电子拼豆'}]}
+ {id:'games',icon:'🎮',name:'带薪游乐场',items:[{id:'beads',icon:'✿',name:'电子拼豆'},{id:'gomoku',icon:'●',name:'五子棋'}]}
 ];
 const expandedGroup=ref('supply'),sidebarCollapsed=ref(false),sharedLobbyID=ref(0);
 watch(tab,value=>{const group=navGroups.find(g=>g.items.some(i=>i.id===value));if(group)expandedGroup.value=group.id;});
 function selectNav(id:string){tab.value=id;if(id==='orders')void refresh();}
 function openSharedBeads(id:number){sharedLobbyID.value=id;tab.value='lobby';}
-watch(tab, value => { if (value === "healing") healingOpened.value = true; if (value === "work") workOpened.value = true; if (value === "slim") slimOpened.value = true; if(value==="beads")beadsOpened.value=true; }, {flush: "sync"});
+watch(tab, value => { if (value === "healing") healingOpened.value = true; if (value === "work") workOpened.value = true; if (value === "slim") slimOpened.value = true; if(value==="beads")beadsOpened.value=true;if(value==="gomoku")gomokuOpened.value=true; }, {flush: "sync"});
 const loading = ref(true),
   error = ref(""),
   busy = ref(false),
@@ -96,7 +98,7 @@ function clearPrivateState() {
   workOpened.value = false;
   slimOpened.value = false;
   lobbyUnread.value = 0;
-  beadsOpened.value=false;
+  beadsOpened.value=false;gomokuOpened.value=false;
   musicLab.value?.stop();
   player.reset();
   me.value = { id: "", username: "", balance: 0, claimed_today: false };
@@ -879,6 +881,7 @@ async function saveReceipt() {
         />
         <HealingChat v-if="me.id && healingOpened" v-show="tab === 'healing'" :foreground="tab === 'healing'" ref="healingChat" :key="me.id" @auth-expired="forgetSession" />
         <!-- #ifdef H5 -->
+        <GomokuRoom v-if="me.id && gomokuOpened" v-show="tab==='gomoku'" :key="me.id" :me="me" :foreground="tab==='gomoku'" @auth-expired="forgetSession" @balance="me.balance=$event"/>
         <BeadStudio v-if="me.id && beadsOpened" v-show="tab==='beads'" :key="me.id" :account-id="me.id" :foreground="tab==='beads'" @shared="openSharedBeads" @auth-expired="forgetSession" />
         <PersonalCenter v-if="me.id && tab==='profile'" :key="me.id" :me="me" @updated="me=$event" @auth-expired="forgetSession" />
         <LobbyHall v-if="me.id" v-show="tab==='lobby'" :key="me.id" :me="me" :foreground="tab==='lobby'" :shared-message-id="sharedLobbyID" @auth-expired="forgetSession" @unread="lobbyUnread=$event"/>

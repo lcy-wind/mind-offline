@@ -42,6 +42,7 @@ type app struct {
 	adminAccountID string
 	limits         limiter
 	lobby          lobbyHub
+	gomoku         gomokuHub
 }
 type Dish struct {
 	ID          int    `json:"id"`
@@ -257,6 +258,11 @@ func (a *app) routes() http.Handler {
 	m.HandleFunc("POST /api/lobby/messages/{id}/retract", a.customer(a.lobbyRetract))
 	m.HandleFunc("POST /api/lobby/messages/{id}/reaction", a.customer(a.lobbyReaction))
 	m.HandleFunc("POST /api/lobby/messages/{id}/moderate", a.admin(a.lobbyModerate))
+	m.HandleFunc("GET /api/gomoku", a.customer(a.gomokuState))
+	m.HandleFunc("GET /api/gomoku/events", a.customer(a.gomokuEvents))
+	m.HandleFunc("POST /api/gomoku/action", a.customer(a.gomokuAction))
+	m.HandleFunc("POST /api/gomoku/chat", a.customer(a.gomokuChat))
+	m.HandleFunc("GET /api/admin/gomoku", a.admin(a.gomokuHistory))
 	m.HandleFunc("GET /api/beads", a.customer(a.beadList))
 	m.HandleFunc("GET /api/beads/{id}", a.customer(a.beadGet))
 	m.HandleFunc("POST /api/beads", a.customer(a.beadSave))
@@ -672,6 +678,10 @@ func main() {
 	a := &app{db: db, adminAccountID: adminID, music: music, ai: configureHealing(), mail: mailer}
 	autoContext, stopAutomaticOrders := context.WithCancel(context.Background())
 	defer stopAutomaticOrders()
+	if e = a.tickGomoku(ctx, true); e != nil {
+		log.Fatalf("gomoku recovery failed: %v", e)
+	}
+	go a.runGomoku(autoContext)
 	go a.runAutomaticOrders(autoContext)
 	go a.runWorkReminders(autoContext)
 	addr := os.Getenv("LISTEN_ADDR")
