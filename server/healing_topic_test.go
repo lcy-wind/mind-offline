@@ -16,7 +16,7 @@ func TestHealingTopicContext(t *testing.T) {
 			t.Fatal("history order changed")
 		}
 		latest := messages[len(messages)-1].Content
-		if !strings.Contains(latest, pairs[0][1]) || !strings.HasSuffix(latest, "可以呀给我分享一下吧") {
+		if latest != "可以呀给我分享一下吧" || messages[len(messages)-2].Content != pairs[0][1] || len(messages) != 6 {
 			t.Fatalf("%s lost implicit-reference context", role.Code)
 		}
 	}
