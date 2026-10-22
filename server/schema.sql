@@ -227,3 +227,42 @@ CREATE TABLE IF NOT EXISTS gomoku_ledger (
  event_key text NOT NULL,lane text NOT NULL,delta integer NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(game_id,account_id,event_key)
 );
+
+-- Incremental logical chat-pool accounting. Large JSON snapshots are measured
+-- as uncompressed UTF-8, so TOAST compression does not hide growth. Fixed row
+-- allowances cover identifiers and per-record bookkeeping, not physical files.
+CREATE TABLE IF NOT EXISTS lobby_pool (
+ id integer PRIMARY KEY CHECK(id=1), used_bytes bigint NOT NULL DEFAULT 0 CHECK(used_bytes>=0),
+ pruned_through bigint NOT NULL DEFAULT 0, pruned_messages bigint NOT NULL DEFAULT 0,
+ last_cleanup_at timestamptz
+);
+CREATE OR REPLACE FUNCTION lobby_message_bytes(c text,b jsonb) RETURNS bigint
+ LANGUAGE sql IMMUTABLE AS $$ SELECT 256::bigint+octet_length(c)+octet_length(COALESCE(b::text,'')) $$;
+-- One-time baseline; subsequent startups do not rescan history.
+INSERT INTO lobby_pool(id,used_bytes)
+ SELECT 1,COALESCE((SELECT sum(lobby_message_bytes(content,bead_share)) FROM lobby_messages),0)
+ +(SELECT count(*)*160 FROM lobby_message_reads)+(SELECT count(*)*192 FROM lobby_reactions)
+ WHERE NOT EXISTS(SELECT 1 FROM lobby_pool WHERE id=1);
+CREATE OR REPLACE FUNCTION lobby_pool_account() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE before_bytes bigint:=0;after_bytes bigint:=0;
+BEGIN
+ IF TG_TABLE_NAME='lobby_messages' THEN
+  IF TG_OP<>'INSERT' THEN before_bytes:=lobby_message_bytes(OLD.content,OLD.bead_share); END IF;
+  IF TG_OP<>'DELETE' THEN after_bytes:=lobby_message_bytes(NEW.content,NEW.bead_share); END IF;
+ ELSE
+  IF TG_OP<>'INSERT' THEN before_bytes:=CASE WHEN TG_TABLE_NAME='lobby_message_reads' THEN 160 ELSE 192 END; END IF;
+  IF TG_OP<>'DELETE' THEN after_bytes:=CASE WHEN TG_TABLE_NAME='lobby_message_reads' THEN 160 ELSE 192 END; END IF;
+ END IF;
+ IF after_bytes<>before_bytes THEN UPDATE lobby_pool SET used_bytes=used_bytes+after_bytes-before_bytes WHERE id=1; END IF;
+ RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS lobby_messages_pool_account ON lobby_messages;
+CREATE TRIGGER lobby_messages_pool_account AFTER INSERT OR UPDATE OR DELETE ON lobby_messages FOR EACH ROW EXECUTE FUNCTION lobby_pool_account();
+DROP TRIGGER IF EXISTS lobby_reads_pool_account ON lobby_message_reads;
+CREATE TRIGGER lobby_reads_pool_account AFTER INSERT OR DELETE ON lobby_message_reads FOR EACH ROW EXECUTE FUNCTION lobby_pool_account();
+DROP TRIGGER IF EXISTS lobby_reactions_pool_account ON lobby_reactions;
+CREATE TRIGGER lobby_reactions_pool_account AFTER INSERT OR DELETE ON lobby_reactions FOR EACH ROW EXECUTE FUNCTION lobby_pool_account();
+-- Recycle deleted chat pages earlier; do not run blocking VACUUM FULL online.
+ALTER TABLE lobby_messages SET (autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=1000);
+ALTER TABLE lobby_message_reads SET (autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=1000);
+ALTER TABLE lobby_reactions SET (autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=1000);

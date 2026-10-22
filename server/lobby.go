@@ -199,6 +199,7 @@ func (a *app) lobbyMessages(w http.ResponseWriter, r *http.Request) {
 }
 func (a *app) lobbyState(w http.ResponseWriter, r *http.Request) {
 	var read, unread, latest int64
+	var prunedThrough int64
 	var mute *time.Time
 	err := a.db.QueryRow(r.Context(), `SELECT COALESCE((SELECT last_read FROM lobby_members WHERE account_id=$1),0),(SELECT muted_until FROM lobby_members WHERE account_id=$1),COALESCE((SELECT max(id) FROM lobby_messages),0)`, r.Context().Value(guestKey)).Scan(&read, &mute, &latest)
 	if err == nil {
@@ -208,7 +209,11 @@ func (a *app) lobbyState(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	jsonOut(w, 200, map[string]any{"unread": unread, "last_read": read, "latest": latest, "muted_until": mute, "online": a.lobby.online(), "server_time": time.Now()})
+	if err = a.db.QueryRow(r.Context(), "SELECT pruned_through FROM lobby_pool WHERE id=1").Scan(&prunedThrough); err != nil {
+		a.internal(w, err)
+		return
+	}
+	jsonOut(w, 200, map[string]any{"unread": unread, "last_read": read, "latest": latest, "pruned_through": prunedThrough, "muted_until": mute, "online": a.lobby.online(), "server_time": time.Now()})
 }
 func (a *app) lobbyRead(w http.ResponseWriter, r *http.Request) {
 	var in struct {

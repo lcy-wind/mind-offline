@@ -684,6 +684,7 @@ func main() {
 	go a.runGomoku(autoContext)
 	go a.runAutomaticOrders(autoContext)
 	go a.runWorkReminders(autoContext)
+	go a.runLobbyRetention(autoContext)
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:18082"
