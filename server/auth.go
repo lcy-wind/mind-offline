@@ -91,9 +91,9 @@ func (a *app) registerCustomer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Destroy the old anonymous credential when transferring ownership to an account.
-		_, e = tx.Exec(ctx, "UPDATE guests SET token_hash=$1 WHERE id=$2", hash(token()), id)
+		_, e = tx.Exec(ctx, "UPDATE guests SET token_hash=$1,balance=balance+800 WHERE id=$2", hash(token()), id)
 	} else {
-		_, e = tx.Exec(ctx, "INSERT INTO guests(id,token_hash) VALUES($1,$2)", id, hash(token()))
+		_, e = tx.Exec(ctx, "INSERT INTO guests(id,token_hash,balance) VALUES($1,$2,800)", id, hash(token()))
 	}
 	if e != nil {
 		a.internal(w, e)

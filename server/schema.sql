@@ -266,3 +266,9 @@ CREATE TRIGGER lobby_reactions_pool_account AFTER INSERT OR DELETE ON lobby_reac
 ALTER TABLE lobby_messages SET (autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=1000);
 ALTER TABLE lobby_message_reads SET (autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=1000);
 ALTER TABLE lobby_reactions SET (autovacuum_vacuum_scale_factor=0.02,autovacuum_vacuum_threshold=1000);
+
+CREATE TABLE IF NOT EXISTS point_grants (
+ campaign text NOT NULL, account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ amount integer NOT NULL CHECK(amount>0), granted_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(campaign,account_id)
+);

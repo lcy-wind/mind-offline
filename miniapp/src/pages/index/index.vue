@@ -610,7 +610,7 @@ async function saveReceipt() {
         }}
       </button>
       <text class="modal-footnote"
-        >{{ loading ? "正在检查登录状态…" : "新账号赠送300精神值 · 仅模拟交易"
+        >{{ loading ? "正在检查登录状态…" : "新账号赠送800精神值 · 仅模拟交易"
         }}<br />请记好账号密码，暂不提供自助找回。</text
       >
     </view>
@@ -900,7 +900,7 @@ async function saveReceipt() {
             ><view class="guide-rule"
               ><text>01 / 精神值怎么来？</text
               ><text
-                >新账号注册获得300精神值，每天可再领取100。仅用于本站体验，没有现金价值。</text
+                >新账号注册获得800精神值，每天可再领取100。仅用于本站体验，没有现金价值。</text
               ></view
             ><view class="guide-rule"
               ><text>02 / 下单后会发生什么？</text
