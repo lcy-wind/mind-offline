@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {build} from 'esbuild';
+const b=await build({entryPoints:['src/lib/healing-time.ts'],bundle:true,write:false,platform:'node',format:'esm'});const {healingMessageTime}=await import('data:text/javascript;base64,'+Buffer.from(b.outputFiles[0].text).toString('base64'));
+test('chat timestamps use Beijing time across midnight and hide missing times',()=>{assert.equal(healingMessageTime('2026-10-23T15:59:00Z'),'2026-10-23 23:59');assert.equal(healingMessageTime('2026-10-23T16:00:00Z'),'2026-10-24 00:00');assert.equal(healingMessageTime('bad'),'');assert.equal(healingMessageTime(undefined),'');});

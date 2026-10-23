@@ -94,7 +94,12 @@ func TestHealingIntegration(t *testing.T) {
 		}
 		json.NewDecoder(r.Body).Decode(&input)
 		histories = append(histories, input.Messages)
-		return &http.Response{StatusCode: int(providerStatus.Load()), Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"你好，慢慢说。\"}}]}\n\ndata: [DONE]\n\n"))}, nil
+		reply := "你好，慢慢说。"
+		if len(input.Messages) > 2 {
+			reply = "你刚才说今天有点累。"
+		}
+		payload, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": reply}}}})
+		return &http.Response{StatusCode: int(providerStatus.Load()), Body: io.NopCloser(strings.NewReader("data: " + string(payload) + "\n\ndata: [DONE]\n\n"))}, nil
 	})}
 	a := &app{db: db, ai: ai}
 	handler := a.routes()
@@ -132,6 +137,22 @@ func TestHealingIntegration(t *testing.T) {
 	first := call("POST", path+"/messages", auth[0], body, 200)
 	if !strings.Contains(string(first), "event: done") {
 		t.Fatalf("missing completion: %s", first)
+	}
+
+	var completed healingTurn
+	for _, block := range strings.Split(string(first), "\n\n") {
+		if strings.HasPrefix(block, "event: done\n") {
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(strings.SplitN(block, "\n", 2)[1], "data: ")), &completed); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var savedDetail struct {
+		Turns []healingTurn `json:"turns"`
+	}
+	json.Unmarshal(call("GET", path, auth[0], nil, 200), &savedDetail)
+	if len(savedDetail.Turns) != 1 || completed.CreatedAt.IsZero() || completed.UpdatedAt.Before(completed.CreatedAt) || !completed.CreatedAt.Equal(savedDetail.Turns[0].CreatedAt) || !completed.UpdatedAt.Equal(savedDetail.Turns[0].UpdatedAt) {
+		t.Fatal("live and persisted message timestamps differ")
 	}
 	call("POST", path+"/messages", auth[0], body, 200)
 	if calls.Load() != 1 {

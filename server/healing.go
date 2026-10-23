@@ -68,6 +68,7 @@ type healingTurn struct {
 	Assistant string    `json:"assistant"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 type healingMessage struct {
 	Role    string `json:"role"`
@@ -178,7 +179,7 @@ func (a *app) healingDetail(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	rows, err := a.db.Query(r.Context(), "SELECT request_id,user_content,assistant_content,status,created_at FROM healing_turns WHERE conversation_id=$1 ORDER BY created_at,request_id LIMIT 200", id)
+	rows, err := a.db.Query(r.Context(), "SELECT request_id,user_content,assistant_content,status,created_at,updated_at FROM healing_turns WHERE conversation_id=$1 ORDER BY created_at,request_id LIMIT 200", id)
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -187,7 +188,7 @@ func (a *app) healingDetail(w http.ResponseWriter, r *http.Request) {
 	turns := make([]healingTurn, 0)
 	for rows.Next() {
 		var t healingTurn
-		if err = rows.Scan(&t.ID, &t.User, &t.Assistant, &t.Status, &t.CreatedAt); err != nil {
+		if err = rows.Scan(&t.ID, &t.User, &t.Assistant, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			a.internal(w, err)
 			return
 		}
@@ -253,7 +254,7 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var previous healingTurn
-	err = a.db.QueryRow(r.Context(), "SELECT request_id,user_content,assistant_content,status,created_at FROM healing_turns WHERE conversation_id=$1 AND request_id=$2", id, in.ID).Scan(&previous.ID, &previous.User, &previous.Assistant, &previous.Status, &previous.CreatedAt)
+	err = a.db.QueryRow(r.Context(), "SELECT request_id,user_content,assistant_content,status,created_at,updated_at FROM healing_turns WHERE conversation_id=$1 AND request_id=$2", id, in.ID).Scan(&previous.ID, &previous.User, &previous.Assistant, &previous.Status, &previous.CreatedAt, &previous.UpdatedAt)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		a.internal(w, err)
 		return
@@ -309,7 +310,8 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "这段聊天已经很长了，开一段新聊天继续吧")
 		return
 	}
-	_, err = a.db.Exec(r.Context(), "INSERT INTO healing_turns(conversation_id,request_id,user_content,status) VALUES($1,$2,$3,'pending') ON CONFLICT(conversation_id,request_id) DO UPDATE SET assistant_content='',status='pending',updated_at=now()", id, in.ID, in.Text)
+	var sentAt time.Time
+	err = a.db.QueryRow(r.Context(), "INSERT INTO healing_turns(conversation_id,request_id,user_content,status) VALUES($1,$2,$3,'pending') ON CONFLICT(conversation_id,request_id) DO UPDATE SET assistant_content='',status='pending',updated_at=now() RETURNING created_at", id, in.ID, in.Text).Scan(&sentAt)
 	if err != nil {
 		fail(w, 409, "聊天状态已变化，请刷新后重试")
 		return
@@ -320,7 +322,7 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = a.db.Exec(r.Context(), "UPDATE healing_conversations SET title=CASE WHEN title='新的聊天' THEN $2 ELSE title END,updated_at=now() WHERE id=$1", id, string(title))
 	beginHealingStream(w)
-	if !healingEvent(w, "start", map[string]string{"request_id": in.ID}) {
+	if !healingEvent(w, "start", map[string]any{"request_id": in.ID, "created_at": sentAt}) {
 		a.finishHealingTurn(id, in.ID, "", "interrupted")
 		return
 	}
@@ -357,7 +359,12 @@ func (a *app) healingSend(w http.ResponseWriter, r *http.Request) {
 		healingEvent(w, "error", map[string]string{"message": healingFailure(err), "status": status})
 		return
 	}
-	healingEvent(w, "done", healingTurn{ID: in.ID, User: in.Text, Assistant: text, Status: status, CreatedAt: time.Now()})
+	var replyAt time.Time
+	if err = a.db.QueryRow(r.Context(), "SELECT updated_at FROM healing_turns WHERE conversation_id=$1 AND request_id=$2", id, in.ID).Scan(&replyAt); err != nil {
+		healingEvent(w, "error", map[string]string{"message": "回复已保存，请刷新查看"})
+		return
+	}
+	healingEvent(w, "done", healingTurn{ID: in.ID, User: in.Text, Assistant: text, Status: status, CreatedAt: sentAt, UpdatedAt: replyAt})
 }
 func (a *app) finishHealingTurn(id, requestID, text, status string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

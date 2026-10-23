@@ -89,7 +89,7 @@ func (a *app) adminHealingDetail(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	rows, err := a.db.Query(r.Context(), "SELECT request_id,user_content,assistant_content,status,created_at FROM healing_turns WHERE conversation_id=$1 ORDER BY created_at DESC,request_id DESC LIMIT $2 OFFSET $3", c.ID, pageSize, (page-1)*pageSize)
+	rows, err := a.db.Query(r.Context(), "SELECT request_id,user_content,assistant_content,status,created_at,updated_at FROM healing_turns WHERE conversation_id=$1 ORDER BY created_at DESC,request_id DESC LIMIT $2 OFFSET $3", c.ID, pageSize, (page-1)*pageSize)
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -98,7 +98,7 @@ func (a *app) adminHealingDetail(w http.ResponseWriter, r *http.Request) {
 	items := []healingTurn{}
 	for rows.Next() {
 		var t healingTurn
-		if err = rows.Scan(&t.ID, &t.User, &t.Assistant, &t.Status, &t.CreatedAt); err != nil {
+		if err = rows.Scan(&t.ID, &t.User, &t.Assistant, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			a.internal(w, err)
 			return
 		}

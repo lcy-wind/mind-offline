@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {healingMessageTime} from '../lib/healing-time';
 import { formatHealingReply } from "../lib/healing-text";
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { request, ApiError } from "../lib/api";
@@ -8,7 +9,7 @@ import { nativeHealing } from "../lib/healing-native";
 // #endif
 interface Role { code: string; name: string; style: string }
 interface Conversation { id: string; title: string; mbti: string; name: string; style: string; updated_at: string }
-interface Turn { id: string; user: string; assistant: string; status: string; created_at: string }
+interface Turn { id: string; user: string; assistant: string; status: string; created_at: string; updated_at?:string }
 const props = defineProps<{ foreground?: boolean }>();
 const emit = defineEmits<{ (e: "auth-expired"): void }>();
 const roles = ref<Role[]>([]), conversations = ref<Conversation[]>([]), turns = ref<Turn[]>([]);
@@ -103,7 +104,7 @@ async function send(existing?: Turn) {
   const id = active.value.id, run = revision;
   const requestID = existing?.id || Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + "-" + Math.random().toString(36).slice(2);
   let turn = existing;
-  if (turn) { turn.assistant = ""; turn.status = "pending"; }
+  if (turn) { turn.assistant = ""; turn.status = "pending"; turn.updated_at=undefined; }
   else { turns.value.push({id:requestID,user:text,assistant:"",status:"pending",created_at:new Date().toISOString()}); turn = turns.value[turns.value.length-1]; draft.value = ""; }
   const target = turn;
   sending.value = true; error.value = ""; stopped = false; follow.value = true; scrollBottom();
@@ -112,8 +113,9 @@ async function send(existing?: Turn) {
   // #endif
   const accept = (e: ChatEvent) => {
     if (!alive || run !== revision || active.value?.id !== id) return;
+    if(e.event === "start" && e.data.created_at)target.created_at=e.data.created_at;
     if (e.event === "delta") { target.assistant += e.data.text; scrollBottom(); }
-    if (e.event === "done") { target.assistant = e.data.assistant; target.status = e.data.status; scrollBottom(); }
+    if (e.event === "done") { target.assistant = e.data.assistant; target.status = e.data.status; if(e.data.created_at)target.created_at=e.data.created_at;target.updated_at=e.data.updated_at;scrollBottom(); }
   };
   let pending: {promise: Promise<void>; abort(): void};
   // #ifdef H5
@@ -192,8 +194,8 @@ defineExpose({stop});
             <view v-if="loading" class="chat-empty">正在翻开这段聊天…</view>
             <view v-else-if="!turns.length" class="chat-empty"><text class="empty-icon">✳</text><text>这里没有标准答案。</text><text class="subtle">从一句“今天好累”，或者一个奇怪的脑洞开始吧。</text></view>
             <view v-for="turn in turns" :key="turn.id" class="turn">
-              <view class="message user"><text class="message-label">你</text><text class="bubble">{{ turn.user }}</text></view>
-              <view class="message assistant"><text class="message-label">{{ active.name }}</text><text class="bubble">{{ formatHealingReply(turn.assistant) || (turn.status === 'pending' ? '正在组织语言…' : '这条回复还没完成。') }}<text v-if="turn.status === 'pending' && sending" class="typing-dot"> ▍</text></text>
+              <view class="message user"><text class="message-label">你 <text class="message-time">{{healingMessageTime(turn.created_at)}}</text></text><text class="bubble">{{ turn.user }}</text></view>
+              <view class="message assistant"><text class="message-label">{{ active.name }} <text v-if="turn.status!=='pending'&&turn.updated_at" class="message-time">{{healingMessageTime(turn.updated_at)}}</text></text><text class="bubble">{{ formatHealingReply(turn.assistant) || (turn.status === 'pending' ? '正在组织语言…' : '这条回复还没完成。') }}<text v-if="turn.status === 'pending' && sending" class="typing-dot"> ▍</text></text>
                 <view v-if="turn.status !== 'complete'" class="turn-state"><text>{{ turn.status === 'pending' ? (sending ? '回复中…' : '上一条回复尚未完成，可刷新查看') : turn.status === 'interrupted' ? '已停止生成' : '回复未完成' }}</text><button v-if="turn.status !== 'pending'" :disabled="sending" @click="send(turn)">重试这条</button></view>
               </view>
             </view>
@@ -274,4 +276,5 @@ button:disabled { opacity: .45; }button::after { border: 0; }
 .message-scroll { height: 400px; }
 .messages { height: auto; min-height: 400px; overflow: visible; box-sizing: border-box; }
 /* #endif */
+.message-time{margin-left:9px;font-size:10px;font-weight:400;color:#a9ad9b;white-space:nowrap}
 </style>
